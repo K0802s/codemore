@@ -14,7 +14,7 @@ const config = {
         libraryTarget: 'commonjs2',
     },
     // Bundle all dependencies - typescript is required for AST parsing
-    externals: {},
+    externals: ['fsevents'],
     devtool: 'source-map',
     resolve: {
         extensions: ['.ts', '.js'],
