@@ -153,6 +153,7 @@ export class ContextMap {
 
     /**
      * Get project context
+     * Note: Maps are converted to plain objects for JSON serialization
      */
     getProjectContext(): ProjectContext {
         let totalIssues = 0;
@@ -160,11 +161,22 @@ export class ContextMap {
             totalIssues += context.issues.length;
         }
 
+        // Convert Maps to plain objects for JSON serialization
+        const filesObj: Record<string, FileContext> = {};
+        for (const [key, value] of this.files.entries()) {
+            filesObj[key] = value;
+        }
+
+        const depGraphObj: Record<string, string[]> = {};
+        for (const [key, value] of this.dependencyGraph.entries()) {
+            depGraphObj[key] = value;
+        }
+
         return {
             rootPath: this.workspacePath,
             name: path.basename(this.workspacePath),
-            files: this.files,
-            dependencyGraph: this.dependencyGraph,
+            files: filesObj as any,
+            dependencyGraph: depGraphObj as any,
             totalIssues,
             lastFullAnalysis: this.lastFullAnalysis,
         };

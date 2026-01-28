@@ -150,13 +150,9 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                     return;
                 }
                 try {
-                    const context = await this.rpcClient.call('getProjectContext', {});
-                    // Collect all issues from files
-                    const issues: CodeIssue[] = [];
-                    for (const [, fileContext] of Object.entries(context.context.files || {})) {
-                        issues.push(...(fileContext as any).issues || []);
-                    }
-                    this.postMessage({ type: 'issuesUpdate', issues });
+                    // Use getAllIssues for efficient issue retrieval
+                    const result = await this.rpcClient.call('getAllIssues', {});
+                    this.postMessage({ type: 'issuesUpdate', issues: result.issues });
                 } catch (error) {
                     this.postMessage({ type: 'issuesUpdate', issues: [] });
                     this.postMessage({ type: 'error', message: `Failed to get issues: ${error}` });
@@ -273,17 +269,14 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         }
         
         try {
-            // Get metrics
-            const metricsResult = await this.rpcClient.call('getMetrics', {});
+            // Get metrics and issues in parallel for efficiency
+            const [metricsResult, issuesResult] = await Promise.all([
+                this.rpcClient.call('getMetrics', {}),
+                this.rpcClient.call('getAllIssues', {})
+            ]);
+            
             this.postMessage({ type: 'metricsUpdate', metrics: metricsResult.metrics });
-
-            // Get project context for issues
-            const contextResult = await this.rpcClient.call('getProjectContext', {});
-            const issues: CodeIssue[] = [];
-            for (const [, fileContext] of Object.entries(contextResult.context.files || {})) {
-                issues.push(...(fileContext as any).issues || []);
-            }
-            this.postMessage({ type: 'issuesUpdate', issues });
+            this.postMessage({ type: 'issuesUpdate', issues: issuesResult.issues });
         } catch (error) {
             this.outputChannel.appendLine(`Failed to refresh dashboard: ${error}`);
             // Send empty data on error to stop loading

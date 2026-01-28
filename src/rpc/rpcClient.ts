@@ -114,13 +114,21 @@ export class RpcClient implements vscode.Disposable {
         try {
             const message = typeof data === 'string' ? JSON.parse(data) : data;
 
+            // Skip non-JSON-RPC messages (like {type: 'ready'} which is handled by DaemonManager)
+            if (typeof message === 'object' && message !== null && 'type' in message && !('jsonrpc' in message)) {
+                // This is a simple message type (e.g., 'ready', 'shutdown'), not JSON-RPC
+                // These are handled by DaemonManager directly
+                return;
+            }
+
             if (isJsonRpcResponse(message)) {
                 this.handleResponse(message);
             } else if (isJsonRpcNotification(message)) {
                 this.handleNotification(message);
-            } else {
-                this.outputChannel.appendLine(`Unknown message type: ${JSON.stringify(message)}`);
+            } else if ('jsonrpc' in message) {
+                this.outputChannel.appendLine(`Unknown JSON-RPC message: ${JSON.stringify(message)}`);
             }
+            // Silently ignore other message types
         } catch (error) {
             this.outputChannel.appendLine(`Failed to parse daemon message: ${error}`);
         }

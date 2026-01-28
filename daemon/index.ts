@@ -293,6 +293,18 @@ const handlers: Record<string, RequestHandler> = {
     },
 
     /**
+     * Get all issues across the project
+     */
+    async getAllIssues(): Promise<{ issues: CodeIssue[] }> {
+        if (!contextMap) {
+            throw new Error('Daemon not initialized');
+        }
+
+        const issues = contextMap.getAllIssues();
+        return { issues };
+    },
+
+    /**
      * Invalidate cache for a file
      */
     async invalidateFile(params: unknown): Promise<{ success: boolean }> {
@@ -332,14 +344,45 @@ const handlers: Record<string, RequestHandler> = {
 // ============================================================================
 
 /**
+ * Check if message is a JSON-RPC notification (request without id)
+ */
+function isJsonRpcNotification(msg: unknown): boolean {
+    return (
+        typeof msg === 'object' &&
+        msg !== null &&
+        'jsonrpc' in msg &&
+        (msg as any).jsonrpc === '2.0' &&
+        'method' in msg &&
+        !('id' in msg)
+    );
+}
+
+/**
  * Handle incoming messages from the extension host
  */
 async function handleMessage(data: unknown): Promise<void> {
     try {
         const message = typeof data === 'string' ? JSON.parse(data) : data;
 
+        // Handle JSON-RPC notifications (no response expected)
+        if (isJsonRpcNotification(message)) {
+            const notification = message as { method: string; params?: unknown };
+            const handler = handlers[notification.method];
+            if (handler) {
+                try {
+                    log(`Handling notification: ${notification.method}`);
+                    await handler(notification.params);
+                } catch (error) {
+                    logError(`Notification handler error for ${notification.method}`, error);
+                }
+            }
+            // No response for notifications
+            return;
+        }
+
+        // Handle JSON-RPC requests (response expected)
         if (!isJsonRpcRequest(message)) {
-            log(`Ignoring non-request message: ${JSON.stringify(message)}`);
+            // Silently ignore non-JSON-RPC messages (like shutdown signals)
             return;
         }
 

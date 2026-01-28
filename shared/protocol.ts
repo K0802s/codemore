@@ -232,6 +232,10 @@ export interface DaemonMethods {
         params: {};
         result: { context: ProjectContext };
     };
+    'getAllIssues': {
+        params: {};
+        result: { issues: CodeIssue[] };
+    };
     'invalidateFile': {
         params: { filePath: string };
         result: { success: boolean };
