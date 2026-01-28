@@ -155,10 +155,24 @@ export class ExternalToolRunner {
     private async checkToolAvailability(): Promise<void> {
         const tools: ExternalTool[] = ['semgrep', 'biome', 'ruff', 'tflint', 'checkov'];
         
+        // Define which tools are bundled vs optional
+        const bundledTools = new Set<ExternalTool>(['biome', 'ruff', 'tflint']);
+        const optionalTools = new Set<ExternalTool>(['semgrep', 'checkov']);
+        
         for (const tool of tools) {
             const available = await this.isToolAvailable(tool);
             this.toolAvailability.set(tool, available);
-            console.log(`[ExternalToolRunner] ${tool}: ${available ? 'available' : 'not found'}`);
+            
+            let status: string;
+            if (available) {
+                status = 'available';
+            } else if (optionalTools.has(tool)) {
+                status = 'not found (optional - install separately if needed)';
+            } else {
+                status = 'not found';
+            }
+            
+            console.log(`[ExternalToolRunner] ${tool}: ${status}`);
         }
     }
 
