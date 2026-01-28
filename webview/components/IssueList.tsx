@@ -138,7 +138,7 @@ const IssueList: React.FC<IssueListProps> = ({
         });
 
         return result;
-    }, [issues, searchQuery, selectedSeverities, selectedCategories, sortBy, sortOrder]);
+    }, [issues, searchQuery, selectedSeverities, selectedCategories, sortBy, sortOrder, selectedSeverities.size, selectedCategories.size]);
 
     const toggleSeverity = (severity: IssueSeverity) => {
         const newSet = new Set(selectedSeverities);

@@ -23,18 +23,29 @@ const execAsync = promisify(exec);
 
 const BIN_DIR = path.join(__dirname, '..', 'bin');
 
+/**
+ * Get current platform identifier
+ */
+function getCurrentPlatform() {
+    const platform = process.platform;
+    const arch = process.arch;
+    
+    if (platform === 'darwin' && arch === 'arm64') {
+        return 'darwin-arm64';
+    } else if (platform === 'darwin') {
+        return 'darwin-x64';
+    } else if (platform === 'linux') {
+        return 'linux-x64';
+    } else if (platform === 'win32') {
+        return 'win32-x64';
+    }
+    
+    return null;
+}
+
 // Tool versions and download URLs
+// Note: Semgrep doesn't provide standalone binaries anymore - install via pip or system package manager
 const TOOLS = {
-    semgrep: {
-        version: 'v1.57.0',
-        platforms: {
-            'darwin-arm64': 'https://github.com/semgrep/semgrep/releases/download/v1.57.0/semgrep-v1.57.0-macos-arm64.zip',
-            'darwin-x64': 'https://github.com/semgrep/semgrep/releases/download/v1.57.0/semgrep-v1.57.0-macos-x86_64.zip',
-            'linux-x64': 'https://github.com/semgrep/semgrep/releases/download/v1.57.0/semgrep-v1.57.0-linux-x86_64.zip',
-            'win32-x64': 'https://github.com/semgrep/semgrep/releases/download/v1.57.0/semgrep-v1.57.0-windows-x86_64.zip',
-        },
-        binaryName: 'semgrep',
-    },
     biome: {
         version: 'v1.5.3',
         platforms: {
@@ -47,12 +58,12 @@ const TOOLS = {
         isDirect: true, // Direct binary download, no extraction
     },
     ruff: {
-        version: 'v0.1.15',
+        version: '0.14.14',
         platforms: {
-            'darwin-arm64': 'https://github.com/astral-sh/ruff/releases/download/v0.1.15/ruff-aarch64-apple-darwin.tar.gz',
-            'darwin-x64': 'https://github.com/astral-sh/ruff/releases/download/v0.1.15/ruff-x86_64-apple-darwin.tar.gz',
-            'linux-x64': 'https://github.com/astral-sh/ruff/releases/download/v0.1.15/ruff-x86_64-unknown-linux-gnu.tar.gz',
-            'win32-x64': 'https://github.com/astral-sh/ruff/releases/download/v0.1.15/ruff-x86_64-pc-windows-msvc.zip',
+            'darwin-arm64': 'https://github.com/astral-sh/ruff/releases/download/0.14.14/ruff-aarch64-apple-darwin.tar.gz',
+            'darwin-x64': 'https://github.com/astral-sh/ruff/releases/download/0.14.14/ruff-x86_64-apple-darwin.tar.gz',
+            'linux-x64': 'https://github.com/astral-sh/ruff/releases/download/0.14.14/ruff-x86_64-unknown-linux-gnu.tar.gz',
+            'win32-x64': 'https://github.com/astral-sh/ruff/releases/download/0.14.14/ruff-x86_64-pc-windows-msvc.zip',
         },
         binaryName: 'ruff',
     },
@@ -133,32 +144,49 @@ async function extractArchive(archivePath, destDir, binaryName) {
         await execAsync(`tar -xzf "${archivePath}" -C "${destDir}"`);
     }
     
-    // Find the binary and move it to the correct location
-    const files = fs.readdirSync(destDir);
-    for (const file of files) {
-        const filePath = path.join(destDir, file);
-        const stat = fs.statSync(filePath);
-        
-        if (stat.isFile() && (file === binaryName || file.startsWith(binaryName))) {
-            const finalPath = path.join(destDir, binaryName);
-            if (filePath !== finalPath) {
-                fs.renameSync(filePath, finalPath);
+    // Find the binary recursively (may be in a subdirectory)
+    const findBinary = (dir) => {
+        const files = fs.readdirSync(dir);
+        for (const file of files) {
+            const filePath = path.join(dir, file);
+            const stat = fs.statSync(filePath);
+            
+            if (stat.isDirectory()) {
+                // Recursively search in subdirectories
+                const found = findBinary(filePath);
+                if (found) return found;
+            } else if (stat.isFile() && (file === binaryName || file.startsWith(binaryName.replace(/\.exe$/, '')))) {
+                return filePath;
             }
-            // Make executable
-            fs.chmodSync(finalPath, 0o755);
-            console.log(`  Extracted binary: ${finalPath}`);
-            break;
         }
+        return null;
+    };
+    
+    const binaryPath = findBinary(destDir);
+    if (!binaryPath) {
+        throw new Error(`Could not find binary ${binaryName} in extracted archive`);
     }
+    
+    const finalPath = path.join(destDir, binaryName);
+    if (binaryPath !== finalPath) {
+        fs.renameSync(binaryPath, finalPath);
+    }
+    
+    // Make executable
+    fs.chmodSync(finalPath, 0o755);
+    console.log(`  Extracted binary: ${finalPath}`);
     
     // Clean up archive
     fs.unlinkSync(archivePath);
     
-    // Clean up any extra files/directories
+    // Clean up any extra files/directories from this extraction only
     const finalBinary = path.join(destDir, binaryName);
     for (const file of fs.readdirSync(destDir)) {
         const filePath = path.join(destDir, file);
-        if (filePath !== finalBinary) {
+        const isArchiveFile = file.endsWith('.tar.gz') || file.endsWith('.zip');
+        const isExtractedDir = fs.existsSync(filePath) && fs.statSync(filePath).isDirectory();
+        
+        if (filePath !== finalBinary && (isArchiveFile || isExtractedDir)) {
             try {
                 const stat = fs.statSync(filePath);
                 if (stat.isDirectory()) {
@@ -220,10 +248,22 @@ async function downloadToolForPlatform(toolName, toolConfig, platform) {
 /**
  * Download all tools
  */
-async function downloadAllTools() {
+async function downloadAllTools(currentPlatformOnly = false) {
     console.log('📦 Downloading external analysis tool binaries...\n');
     
-    const platforms = ['darwin-arm64', 'darwin-x64', 'linux-x64', 'win32-x64'];
+    let platforms;
+    if (currentPlatformOnly) {
+        const currentPlatform = getCurrentPlatform();
+        if (!currentPlatform) {
+            console.error('❌ Unsupported platform:', process.platform, process.arch);
+            process.exit(1);
+        }
+        platforms = [currentPlatform];
+        console.log(`⚡ Current platform only: ${currentPlatform}\n`);
+    } else {
+        platforms = ['darwin-arm64', 'darwin-x64', 'linux-x64', 'win32-x64'];
+        console.log('🌍 Downloading for all platforms (for packaging)\n');
+    }
     
     for (const [toolName, toolConfig] of Object.entries(TOOLS)) {
         console.log(`\n🔧 ${toolName} (${toolConfig.version})`);
@@ -246,8 +286,13 @@ function createGitkeepFiles() {
     
     for (const platform of platforms) {
         const platformDir = path.join(BIN_DIR, platform);
-        const gitkeepPath = path.join(platformDir, '.gitkeep');
         
+        // Ensure directory exists first
+        if (!fs.existsSync(platformDir)) {
+            fs.mkdirSync(platformDir, { recursive: true });
+        }
+        
+        const gitkeepPath = path.join(platformDir, '.gitkeep');
         if (!fs.existsSync(gitkeepPath)) {
             fs.writeFileSync(gitkeepPath, '');
         }
@@ -260,6 +305,7 @@ function createGitkeepFiles() {
 async function main() {
     const args = process.argv.slice(2);
     const skipDownload = args.includes('--skip-download') || args.includes('--dry-run');
+    const currentPlatformOnly = args.includes('--current-platform');
     
     // Ensure bin directory exists
     if (!fs.existsSync(BIN_DIR)) {
@@ -285,7 +331,7 @@ async function main() {
         process.exit(1);
     }
     
-    await downloadAllTools();
+    await downloadAllTools(currentPlatformOnly);
 }
 
 // Run if executed directly

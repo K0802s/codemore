@@ -103,8 +103,13 @@ export class AiService {
         this.externalToolRunner.updateConfig(config);
     }
 
-    /**
-     * Get external tool status for diagnostics
+    /**     * Recheck external tool availability (call after downloading binaries)
+     */
+    async recheckExternalTools(): Promise<void> {
+        await this.externalToolRunner.recheckToolAvailability();
+    }
+
+    /**     * Get external tool status for diagnostics
      */
     getExternalToolStatus(): Record<string, boolean> {
         return this.externalToolRunner.getToolStatus();

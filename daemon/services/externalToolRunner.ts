@@ -127,12 +127,12 @@ export class ExternalToolRunner {
         
         // Determine bin directory (bundled binaries location)
         // In production, binaries would be in extension's bin/ folder
-        // __dirname in compiled code is: daemon/dist/
-        // So we need to go up 3 levels to reach the extension root
-        this.binDir = path.join(__dirname, '..', '..', '..', 'bin');
+        // __dirname in compiled code is: /path/to/extension/daemon/dist/
+        // So we need to go up 2 levels to reach the extension root
+        this.binDir = path.join(__dirname, '..', '..', 'bin');
         
-        // Check tool availability on startup
-        this.checkToolAvailability();
+        // Note: Don't check availability in constructor
+        // Will be checked after binary download in daemon initialization
     }
 
     /**
@@ -140,6 +140,13 @@ export class ExternalToolRunner {
      */
     updateConfig(config: Partial<ExternalToolsConfig>): void {
         this.config = { ...this.config, ...config };
+    }
+
+    /**
+     * Recheck which tools are available (call after downloading binaries)
+     */
+    async recheckToolAvailability(): Promise<void> {
+        await this.checkToolAvailability();
     }
 
     /**
@@ -201,8 +208,19 @@ export class ExternalToolRunner {
 
     /**
      * Get bundled binary path for the current platform
+     * Priority: 1) npm package, 2) bundled binary, 3) system PATH
      */
     private getBundledBinaryPath(tool: ExternalTool): string | null {
+        // First check for npm package binaries
+        if (tool === 'biome') {
+            // @biomejs/biome provides binaries in node_modules
+            const biomePath = path.join(__dirname, '..', '..', 'node_modules', '@biomejs', 'biome', 'bin', 'biome');
+            if (fs.existsSync(biomePath)) {
+                return biomePath;
+            }
+        }
+
+        // Then check bundled binaries
         const platform = os.platform();
         const arch = os.arch();
         
@@ -220,7 +238,13 @@ export class ExternalToolRunner {
         }
 
         const binaryName = platform === 'win32' ? `${tool}.exe` : tool;
-        return path.join(this.binDir, platformDir, binaryName);
+        const bundledPath = path.join(this.binDir, platformDir, binaryName);
+        
+        if (fs.existsSync(bundledPath)) {
+            return bundledPath;
+        }
+        
+        return null;
     }
 
     /**

@@ -29,6 +29,7 @@ import { ContextMap } from './services/contextMap';
 import { AnalysisQueue } from './services/analysisQueue';
 import { AiService } from './services/aiService';
 import { SuggestionEngine } from './services/suggestionEngine';
+import * as path from 'path';
 
 // ============================================================================
 // Daemon State
@@ -118,6 +119,9 @@ const handlers: Record<string, RequestHandler> = {
             contextMap = new ContextMap(workspacePath);
             aiService = new AiService(state.config);
             suggestionEngine = new SuggestionEngine(aiService, contextMap);
+
+            // Recheck external tool availability (binaries should be pre-packaged)
+            await aiService.recheckExternalTools();
 
             analysisQueue = new AnalysisQueue(
                 astParser,
