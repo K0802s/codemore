@@ -16,6 +16,7 @@ import {
 export class SuggestionEngine {
     private issueCache = new Map<string, CodeIssue>();
     private suggestionCache = new Map<string, CodeSuggestion[]>();
+    private suggestionById = new Map<string, CodeSuggestion>();
 
     constructor(
         private readonly aiService: AiService,
@@ -83,10 +84,20 @@ export class SuggestionEngine {
             fileContext
         );
 
-        // Cache suggestions
+        // Cache suggestions by issue ID and by suggestion ID
         this.suggestionCache.set(issueId, suggestions);
+        for (const suggestion of suggestions) {
+            this.suggestionById.set(suggestion.id, suggestion);
+        }
 
         return suggestions;
+    }
+
+    /**
+     * Get a suggestion by its ID
+     */
+    getSuggestionById(suggestionId: string): CodeSuggestion | null {
+        return this.suggestionById.get(suggestionId) || null;
     }
 
     /**
@@ -148,6 +159,7 @@ export class SuggestionEngine {
     clearCache(): void {
         this.issueCache.clear();
         this.suggestionCache.clear();
+        this.suggestionById.clear();
     }
 
     /**

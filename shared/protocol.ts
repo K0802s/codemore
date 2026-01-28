@@ -190,6 +190,7 @@ export interface DaemonNotifications {
     'daemon/fileDiscovery': { totalFiles: number; fileTypes: Record<string, number> };
     'daemon/analysisProgress': { filePath: string; progress: number; total: number };
     'daemon/analysisComplete': { filePath: string; issues: CodeIssue[] };
+    'daemon/analysisStopped': {};
     'daemon/issuesUpdated': { issues: CodeIssue[] };
     'daemon/metricsUpdated': { metrics: CodeHealthMetrics };
     'daemon/error': { message: string; details?: unknown };
@@ -213,9 +214,21 @@ export interface DaemonMethods {
         params: { force?: boolean };
         result: { totalFiles: number; analysisId: string };
     };
+    'stopAnalysis': {
+        params: {};
+        result: { success: boolean; message: string };
+    };
+    'getAnalysisStatus': {
+        params: {};
+        result: { queued: number; processing: number; processed: number; total: number; isRunning: boolean };
+    };
     'getSuggestions': {
         params: { issueId: string };
         result: { suggestions: CodeSuggestion[] };
+    };
+    'getSuggestionById': {
+        params: { suggestionId: string };
+        result: { suggestion: CodeSuggestion | null };
     };
     'getSuggestionsForFile': {
         params: { filePath: string };
@@ -294,6 +307,7 @@ export type WebviewToExtensionMessage =
     | { type: 'dismissIssue'; issueId: string }
     | { type: 'openFile'; filePath: string; line?: number }
     | { type: 'analyzeWorkspace' }
+    | { type: 'stopAnalysis' }
     | { type: 'refreshDashboard' }
     | { type: 'openSettings' };
 
@@ -304,6 +318,7 @@ export type ExtensionToWebviewMessage =
     | { type: 'fileDiscovery'; totalFiles: number; fileTypes: Record<string, number> }
     | { type: 'analysisProgress'; progress: number; total: number; currentFile?: string }
     | { type: 'analysisComplete' }
+    | { type: 'analysisStopped' }
     | { type: 'error'; message: string }
     | { type: 'suggestionApplied'; suggestionId: string; success: boolean }
     | { type: 'themeChanged'; isDark: boolean };

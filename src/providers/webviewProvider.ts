@@ -181,14 +181,17 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                     return;
                 }
                 try {
-                    // Get the suggestion and apply it
-                    const suggestionResult = await this.rpcClient.call('getSuggestions', {
-                        issueId: message.suggestionId,
+                    // Get the suggestion by its ID
+                    const suggestionResult = await this.rpcClient.call('getSuggestionById', {
+                        suggestionId: message.suggestionId,
                     });
-                    const suggestion = suggestionResult.suggestions[0];
+                    const suggestion = suggestionResult.suggestion;
                     if (suggestion) {
                         await vscode.commands.executeCommand('codemore.applySuggestion', suggestion);
                         this.postMessage({ type: 'suggestionApplied', suggestionId: message.suggestionId, success: true });
+                    } else {
+                        this.postMessage({ type: 'error', message: 'Suggestion not found. Please request suggestions again.' });
+                        this.postMessage({ type: 'suggestionApplied', suggestionId: message.suggestionId, success: false });
                     }
                 } catch (error) {
                     this.postMessage({ type: 'suggestionApplied', suggestionId: message.suggestionId, success: false });
@@ -221,6 +224,19 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
 
             case 'analyzeWorkspace':
                 await vscode.commands.executeCommand('codemore.analyzeWorkspace');
+                break;
+
+            case 'stopAnalysis':
+                if (!this.isDaemonReady) {
+                    this.postMessage({ type: 'error', message: 'Daemon is not ready' });
+                    return;
+                }
+                try {
+                    await this.rpcClient.call('stopAnalysis', {});
+                    this.postMessage({ type: 'analysisStopped' });
+                } catch (error) {
+                    this.postMessage({ type: 'error', message: `Failed to stop analysis: ${error}` });
+                }
                 break;
 
             case 'refreshDashboard':

@@ -58,6 +58,9 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 /* Header */
@@ -180,11 +183,36 @@ body {
   box-shadow: 0 0 8px rgba(76, 175, 80, 0.5);
 }
 
-.progress-eta {
+.progress-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   margin-top: 6px;
+}
+
+.progress-eta {
   font-size: 11px;
   color: var(--vscode-descriptionForeground);
-  text-align: right;
+}
+
+.stop-analysis-button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--vscode-errorForeground, #f44336);
+  background: rgba(244, 67, 54, 0.1);
+  border: 1px solid rgba(244, 67, 54, 0.3);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.stop-analysis-button:hover {
+  background: rgba(244, 67, 54, 0.2);
+  border-color: rgba(244, 67, 54, 0.5);
 }
 
 /* File Discovery Banner */
@@ -335,7 +363,9 @@ body {
 .app-content {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 16px;
+  min-width: 0;
 }
 
 /* Loading State */
@@ -411,7 +441,7 @@ body {
 
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 12px;
 }
 
@@ -423,25 +453,36 @@ body {
   background: var(--vscode-editor-background);
   border-radius: var(--border-radius);
   border: 1px solid var(--vscode-panel-border);
+  min-width: 0;
+  overflow: hidden;
 }
 
 .stat-icon {
   font-size: 24px;
+  flex-shrink: 0;
 }
 
 .stat-content {
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .stat-value {
   font-size: 18px;
   font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .stat-label {
   font-size: 11px;
   color: var(--vscode-descriptionForeground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Sections */
@@ -698,6 +739,8 @@ body {
   border-radius: var(--border-radius);
   cursor: pointer;
   transition: all var(--transition-fast);
+  min-width: 0;
+  overflow: hidden;
 }
 
 .issue-card:hover {
@@ -713,6 +756,7 @@ body {
   display: flex;
   gap: 8px;
   margin-bottom: 8px;
+  flex-wrap: wrap;
 }
 
 .severity-badge {
@@ -722,6 +766,7 @@ body {
   font-weight: 600;
   text-transform: uppercase;
   color: #fff;
+  flex-shrink: 0;
 }
 
 .category-badge {
@@ -734,6 +779,7 @@ body {
   display: flex;
   align-items: center;
   gap: 4px;
+  flex-shrink: 0;
 }
 
 .issue-title {
@@ -741,16 +787,19 @@ body {
   font-weight: 600;
   margin-bottom: 4px;
   color: var(--vscode-foreground);
+  word-break: break-word;
 }
 
 .issue-description {
   font-size: 12px;
   color: var(--vscode-descriptionForeground);
   margin-bottom: 8px;
+  word-break: break-word;
 }
 
 .issue-location {
   margin-bottom: 8px;
+  overflow: hidden;
 }
 
 .file-link {
@@ -763,6 +812,10 @@ body {
   display: flex;
   align-items: center;
   gap: 4px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .file-link:hover {
@@ -774,6 +827,7 @@ body {
   gap: 12px;
   font-size: 11px;
   color: var(--vscode-descriptionForeground);
+  flex-wrap: wrap;
 }
 
 .issue-meta span {
@@ -797,12 +851,24 @@ body {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .diff-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.diff-header h3 {
+  font-size: 14px;
+  margin: 0;
+  word-break: break-word;
+  flex: 1;
+  min-width: 0;
 }
 
 .view-mode-toggle {
@@ -831,16 +897,20 @@ body {
   background: var(--vscode-editor-background);
   border-radius: var(--border-radius);
   border: 1px solid var(--vscode-panel-border);
+  min-width: 0;
+  overflow: hidden;
 }
 
 .suggestion-info h4 {
   font-size: 14px;
   margin-bottom: 4px;
+  word-break: break-word;
 }
 
 .suggestion-info p {
   font-size: 12px;
   color: var(--vscode-descriptionForeground);
+  word-break: break-word;
 }
 
 .diff-container {
@@ -849,6 +919,7 @@ body {
   border: 1px solid var(--vscode-panel-border);
   border-radius: var(--border-radius);
   overflow: hidden;
+  min-width: 0;
 }
 
 .diff-container.unified {
@@ -859,6 +930,8 @@ body {
   flex: 1;
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .diff-pane-header {
@@ -874,10 +947,14 @@ body {
   margin: 0;
   padding: 12px;
   overflow-x: auto;
+  overflow-y: auto;
   font-family: var(--vscode-editor-font-family);
   font-size: 12px;
   line-height: 1.6;
   background: var(--vscode-textCodeBlock-background);
+  max-height: 300px;
+  white-space: pre;
+  word-break: keep-all;
 }
 
 .diff-line {
@@ -902,6 +979,7 @@ body {
   display: flex;
   justify-content: flex-end;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .action-button {
@@ -914,6 +992,7 @@ body {
   font-size: 13px;
   cursor: pointer;
   transition: all var(--transition-fast);
+  white-space: nowrap;
 }
 
 .action-button.primary {

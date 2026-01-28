@@ -23,6 +23,7 @@ import {
     Bug,
     Lightbulb,
     AlertTriangle,
+    StopCircle,
 } from 'lucide-react';
 
 // VS Code API interface
@@ -83,6 +84,9 @@ const App: React.FC = () => {
             case 'analysisComplete':
                 setAnalysisProgress(null);
                 break;
+            case 'analysisStopped':
+                setAnalysisProgress(null);
+                break;
             case 'error':
                 setError(message.message);
                 setTimeout(() => setError(null), 5000);
@@ -131,6 +135,11 @@ const App: React.FC = () => {
     // Handle analyze workspace
     const handleAnalyzeWorkspace = () => {
         vscode.postMessage({ type: 'analyzeWorkspace' });
+    };
+
+    // Handle stop analysis
+    const handleStopAnalysis = () => {
+        vscode.postMessage({ type: 'stopAnalysis' });
     };
 
     // Handle refresh
@@ -233,8 +242,17 @@ const App: React.FC = () => {
                             }}
                         />
                     </div>
-                    <div className="progress-eta">
-                        {analysisProgress.total - analysisProgress.progress} files remaining
+                    <div className="progress-footer">
+                        <span className="progress-eta">
+                            {analysisProgress.total - analysisProgress.progress} files remaining
+                        </span>
+                        <button
+                            className="stop-analysis-button"
+                            onClick={handleStopAnalysis}
+                            title="Stop Analysis"
+                        >
+                            <StopCircle size={14} /> Stop
+                        </button>
                     </div>
                 </div>
             )}

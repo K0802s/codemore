@@ -255,21 +255,33 @@ function registerCommands(context: vscode.ExtensionContext): void {
     context.subscriptions.push(
         vscode.commands.registerCommand(
             'codemore.applySuggestion',
-            async (suggestion: { filePath: string; range: any; suggestedCode: string }) => {
+            async (suggestion: { location?: { filePath: string; range: any }; filePath?: string; range?: any; suggestedCode: string }) => {
                 try {
-                    const uri = vscode.Uri.file(suggestion.filePath);
+                    // Support both old format (filePath, range) and new format (location.filePath, location.range)
+                    const filePath = suggestion.location?.filePath ?? suggestion.filePath;
+                    const range = suggestion.location?.range ?? suggestion.range;
+
+                    if (!filePath || !range) {
+                        throw new Error('Invalid suggestion format: missing file path or range');
+                    }
+
+                    if (!suggestion.suggestedCode) {
+                        throw new Error('Invalid suggestion format: missing suggested code');
+                    }
+
+                    const uri = vscode.Uri.file(filePath);
                     const document = await vscode.workspace.openTextDocument(uri);
                     const editor = await vscode.window.showTextDocument(document);
 
-                    const range = new vscode.Range(
-                        suggestion.range.start.line,
-                        suggestion.range.start.column,
-                        suggestion.range.end.line,
-                        suggestion.range.end.column
+                    const vscodeRange = new vscode.Range(
+                        range.start.line,
+                        range.start.column,
+                        range.end.line,
+                        range.end.column
                     );
 
                     await editor.edit((editBuilder) => {
-                        editBuilder.replace(range, suggestion.suggestedCode);
+                        editBuilder.replace(vscodeRange, suggestion.suggestedCode);
                     });
 
                     vscode.window.showInformationMessage('Suggestion applied successfully');

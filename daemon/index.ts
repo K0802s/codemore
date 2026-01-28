@@ -231,6 +231,37 @@ const handlers: Record<string, RequestHandler> = {
     },
 
     /**
+     * Stop ongoing analysis
+     */
+    async stopAnalysis(): Promise<{ success: boolean; message: string }> {
+        if (!analysisQueue) {
+            throw new Error('Daemon not initialized');
+        }
+
+        log('Stopping analysis...');
+        
+        // Stop and clear the analysis queue
+        analysisQueue.stop();
+        analysisQueue.clear();
+
+        notify('daemon/analysisStopped', {});
+
+        return { success: true, message: 'Analysis stopped' };
+    },
+
+    /**
+     * Get analysis queue status
+     */
+    async getAnalysisStatus(): Promise<{ queued: number; processing: number; processed: number; total: number; isRunning: boolean }> {
+        if (!analysisQueue) {
+            return { queued: 0, processing: 0, processed: 0, total: 0, isRunning: false };
+        }
+
+        const status = analysisQueue.getStatus();
+        return { ...status, isRunning: status.processing > 0 || status.queued > 0 };
+    },
+
+    /**
      * Get suggestions for a specific issue
      */
     async getSuggestions(params: unknown): Promise<{ suggestions: CodeSuggestion[] }> {
@@ -242,6 +273,20 @@ const handlers: Record<string, RequestHandler> = {
 
         const suggestions = await suggestionEngine.getSuggestionsForIssue(issueId);
         return { suggestions };
+    },
+
+    /**
+     * Get a specific suggestion by its ID
+     */
+    async getSuggestionById(params: unknown): Promise<{ suggestion: CodeSuggestion | null }> {
+        const { suggestionId } = params as { suggestionId: string };
+
+        if (!suggestionEngine) {
+            throw new Error('Daemon not initialized');
+        }
+
+        const suggestion = suggestionEngine.getSuggestionById(suggestionId);
+        return { suggestion };
     },
 
     /**
