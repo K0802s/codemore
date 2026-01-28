@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useMemo } from 'react';
-import { CodeIssue, IssueSeverity, IssueCategory } from '../types';
+import { CodeIssue, IssueSeverity, IssueCategory, CanonicalSeverity } from '../types';
 import {
     Search,
     X,
@@ -53,7 +53,19 @@ const IssueList: React.FC<IssueListProps> = ({
         'bug', 'code-smell', 'performance', 'security', 'maintainability', 'accessibility', 'best-practice'
     ];
 
-    const getSeverityColor = (severity: IssueSeverity): string => {
+    const getSeverityColor = (severity: IssueSeverity, canonicalSeverity?: CanonicalSeverity): string => {
+        // Use canonical severity for better color coding if available
+        if (canonicalSeverity) {
+            switch (canonicalSeverity) {
+                case 'BLOCKER': return '#d32f2f'; // Dark red
+                case 'CRITICAL': return '#f44336'; // Red
+                case 'MAJOR': return '#ff9800'; // Orange
+                case 'MINOR': return '#2196f3'; // Blue
+                case 'INFO': return '#9e9e9e'; // Gray
+            }
+        }
+        
+        // Fallback to standard severity colors
         switch (severity) {
             case 'error': return 'var(--color-error)';
             case 'warning': return 'var(--color-warning)';
@@ -306,9 +318,10 @@ const IssueList: React.FC<IssueListProps> = ({
                             <div className="issue-header">
                                 <span
                                     className="severity-badge"
-                                    style={{ backgroundColor: getSeverityColor(issue.severity) }}
+                                    style={{ backgroundColor: getSeverityColor(issue.severity, issue.canonicalSeverity) }}
+                                    title={issue.canonicalSeverity ? `Canonical: ${issue.canonicalSeverity}` : undefined}
                                 >
-                                    {issue.severity}
+                                    {issue.canonicalSeverity || issue.severity}
                                 </span>
                                 <span className="category-badge">
                                     {getCategoryIcon(issue.category)} {issue.category.replace('-', ' ')}

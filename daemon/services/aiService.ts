@@ -19,6 +19,7 @@ import { DaemonConfig, CodeIssue, CodeSuggestion, FileContext, IssueSeverity } f
 import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
 import { StaticAnalyzer, StaticAnalyzerConfig } from './staticAnalyzer';
 import { ExternalToolRunner, ExternalToolsConfig } from './externalToolRunner';
+import { SeverityRemapper } from './severityRemapper';
 
 interface CacheEntry {
     response: string;
@@ -55,11 +56,13 @@ export class AiService {
     private geminiModel: GenerativeModel | null = null;
     private staticAnalyzer: StaticAnalyzer;
     private externalToolRunner: ExternalToolRunner;
+    private severityRemapper: SeverityRemapper;
 
     constructor(config: DaemonConfig) {
         this.config = config;
         this.staticAnalyzer = new StaticAnalyzer();
         this.externalToolRunner = new ExternalToolRunner();
+        this.severityRemapper = new SeverityRemapper();
         this.initGemini();
     }
 
@@ -160,7 +163,8 @@ export class AiService {
         if (!this.config.apiKey) {
             const totalTime = Date.now() - startTime;
             console.log(`[AiService] No API key configured, returning ${combinedIssues.length} total issues (${totalTime}ms)`);
-            return combinedIssues;
+            // Apply severity remapping for better UX
+            return this.severityRemapper.remapIssues(combinedIssues);
         }
 
         // Check cache for AI results
@@ -169,7 +173,9 @@ export class AiService {
         if (cached) {
             // Merge cached AI issues with combined issues
             const aiIssues = JSON.parse(cached) as CodeIssue[];
-            return this.mergeIssues(combinedIssues, aiIssues);
+            const mergedIssues = this.mergeIssues(combinedIssues, aiIssues);
+            // Apply severity remapping for better UX
+            return this.severityRemapper.remapIssues(mergedIssues);
         }
 
         // Step 3: Use combined issues to identify "hot spots" for AI focus
@@ -188,11 +194,13 @@ export class AiService {
             const totalTime = Date.now() - startTime;
             const finalIssues = this.mergeIssues(combinedIssues, aiIssues);
             console.log(`[AiService] AI analysis added ${aiIssues.length} issues, total: ${finalIssues.length} (${totalTime}ms)`);
-            return finalIssues;
+            // Apply severity remapping for better UX
+            return this.severityRemapper.remapIssues(finalIssues);
         } catch (error) {
             console.error('[AiService] API call failed, returning combined analysis only:', error);
             // External + static analysis already ran, return those issues
-            return combinedIssues;
+            // Apply severity remapping for better UX
+            return this.severityRemapper.remapIssues(combinedIssues);
         }
     }
 

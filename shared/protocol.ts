@@ -28,6 +28,9 @@ export interface FileLocation {
 
 export type IssueSeverity = 'error' | 'warning' | 'info' | 'hint';
 
+// Canonical severity levels for improved UX (maps to IssueSeverity)
+export type CanonicalSeverity = 'BLOCKER' | 'CRITICAL' | 'MAJOR' | 'MINOR' | 'INFO';
+
 export type IssueCategory =
     | 'bug'
     | 'code-smell'
@@ -43,6 +46,7 @@ export interface CodeIssue {
     description: string;
     category: IssueCategory;
     severity: IssueSeverity;
+    canonicalSeverity?: CanonicalSeverity; // Optional enhanced severity for UI
     location: FileLocation;
     codeSnippet: string;
     confidence: number; // 0-100

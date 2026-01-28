@@ -11,6 +11,7 @@ export type {
     FileContext,
     IssueSeverity,
     IssueCategory,
+    CanonicalSeverity,
     WebviewToExtensionMessage,
     ExtensionToWebviewMessage,
 } from '../shared/protocol';
