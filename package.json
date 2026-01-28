@@ -169,7 +169,7 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run package",
+    "vscode:prepublish": "npm run package && npm run download-binaries",
     "compile": "npm run compile:extension && npm run compile:daemon && npm run compile:webview",
     "compile:extension": "webpack --mode development",
     "compile:daemon": "webpack --mode development --config webpack.daemon.config.js",
@@ -179,13 +179,16 @@
     "watch:daemon": "webpack --mode development --watch --config webpack.daemon.config.js",
     "watch:webview": "webpack --mode development --watch --config webpack.webview.config.js",
     "package": "webpack --mode production --devtool hidden-source-map && webpack --mode production --config webpack.daemon.config.js && webpack --mode production --config webpack.webview.config.js",
+    "download-binaries": "node scripts/download-binaries.js",
+    "download-binaries:skip": "node scripts/download-binaries.js --skip-download",
+    "postinstall": "npm run download-binaries:skip",
     "lint": "eslint src daemon webview --ext ts,tsx",
     "lint:fix": "eslint src daemon webview --ext ts,tsx --fix",
     "test": "node ./out/test/runTest.js",
     "test:unit": "mocha --require ts-node/register 'test/**/*.test.ts'",
     "pretest": "npm run compile",
-    "vsce:package": "vsce package",
-    "vsce:publish": "vsce publish"
+    "vsce:package": "npm run download-binaries && vsce package",
+    "vsce:publish": "npm run download-binaries && vsce publish"
   },
   "devDependencies": {
     "@types/diff": "^7.0.2",

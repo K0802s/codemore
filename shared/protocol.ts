@@ -258,7 +258,52 @@ export interface DaemonMethods {
         params: { config: Partial<DaemonConfig> };
         result: { success: boolean };
     };
+    'getExternalToolStatus': {
+        params: {};
+        result: { tools: ExternalToolStatus };
+    };
+    'setExternalToolsConfig': {
+        params: { config: Partial<ExternalToolsConfig> };
+        result: { success: boolean };
+    };
 }
+
+// ============================================================================
+// External Tool Configuration Types
+// ============================================================================
+
+export type ExternalToolName = 'semgrep' | 'biome' | 'ruff' | 'tflint' | 'checkov';
+
+export interface ExternalToolConfig {
+    enabled: boolean;
+    path?: string; // Custom path to binary
+    timeout: number; // ms
+    extraArgs?: string[];
+}
+
+export interface ExternalToolsConfig {
+    semgrep: ExternalToolConfig;
+    biome: ExternalToolConfig;
+    ruff: ExternalToolConfig;
+    tflint: ExternalToolConfig;
+    checkov: ExternalToolConfig;
+}
+
+export interface ExternalToolStatus {
+    semgrep: { available: boolean; version?: string };
+    biome: { available: boolean; version?: string };
+    ruff: { available: boolean; version?: string };
+    tflint: { available: boolean; version?: string };
+    checkov: { available: boolean; version?: string };
+}
+
+export const DEFAULT_EXTERNAL_TOOLS_CONFIG: ExternalToolsConfig = {
+    semgrep: { enabled: true, timeout: 30000 },
+    biome: { enabled: true, timeout: 10000 },
+    ruff: { enabled: true, timeout: 10000 },
+    tflint: { enabled: true, timeout: 15000 },
+    checkov: { enabled: true, timeout: 30000 },
+};
 
 // ============================================================================
 // Configuration Types
@@ -275,6 +320,7 @@ export interface DaemonConfig {
     maxConcurrentAnalysis: number;
     cacheEnabled: boolean;
     cacheTTLMinutes: number;
+    externalTools?: Partial<ExternalToolsConfig>;
 }
 
 export const DEFAULT_CONFIG: DaemonConfig = {

@@ -5,6 +5,10 @@ node_modules/
 dist/
 out/
 
+# Binaries (downloaded, not committed)
+bin/**/*
+!bin/**/.gitkeep
+
 # TypeScript
 *.tsbuildinfo
 

@@ -1,5 +1,79 @@
 To make your "Codemore" extension a professional-grade tool, the best approach is to bundle high-performance, industry-standard engines that provide instant feedback, while saving your AI for the "hard" logical reasoning.
 
+## ✅ IMPLEMENTED - External Tool Integration
+
+The following external tool integrations have been implemented in `daemon/services/externalToolRunner.ts`:
+
+### The "Essential Trio" (Multi-Language Core)
+
+1. **Semgrep (Security Engine)** ✅
+   - Industry standard SAST scanning
+   - Supports 30+ languages
+   - JSON output parsing
+   - Automatic community rules
+
+2. **Biome (Web/React Native Engine)** ✅
+   - Ultra-fast JS/TS/JSON linting
+   - 100x faster than ESLint
+   - JSON reporter integration
+
+3. **Ruff (Python Engine)** ✅
+   - Lightning-fast Python linting
+   - Replaces Flake8, isort, etc.
+   - Full rule category mapping
+
+### DevOps/Infrastructure Layer ✅
+
+1. **TFLint** - Terraform linting
+2. **Checkov** - IaC security scanning (Terraform, CloudFormation, K8s, Docker)
+
+### Built-in Static Analysis Enhancements ✅
+
+Extended `daemon/services/staticAnalyzer.ts` with:
+
+- **SQL Analysis**: SELECT *, missing WHERE, SQL injection, JOINs
+- **JSON Analysis**: Parse errors, trailing commas
+- **YAML Analysis**: Tabs, indentation, boolean values
+- **Shell Script Analysis**: Unquoted variables, useless cat, eval, shebang
+- **Dockerfile Analysis**: :latest tag, apt-get -y, COPY ., root user
+- **Markdown Analysis**: Broken anchor links
+
+### Architecture
+
+```
+AiService.analyzeCode()
+    ├── External Tools (parallel) ──→ Semgrep, Biome, Ruff, TFLint, Checkov
+    ├── Built-in Static Analysis ──→ TypeScript AST + Language-specific patterns
+    └── AI Analysis (optional) ────→ Focused on "hot spots" from above
+```
+
+- External tool results provide context to AI for smarter analysis
+- Hot spots identified by tools guide AI to focus on problem areas
+- All issues are deduplicated and merged
+
+### Binary Bundling ✅
+
+Pre-compiled binaries are automatically bundled with the extension:
+
+- **Zero Install**: Users get all tools without manual installation
+- **Cross-Platform**: Binaries for macOS (ARM64/x64), Linux (x64), Windows (x64)
+- **Auto-Download**: `scripts/download-binaries.js` downloads from official GitHub releases
+- **Smart Fallback**: Uses bundled binaries → system PATH → built-in analysis
+
+```bash
+# Download binaries before packaging
+npm run download-binaries
+
+# Package with binaries included
+npm run vsce:package
+```
+
+See [BINARY_SETUP.md](BINARY_SETUP.md) for details.
+
+---
+
+## Original Improvement Notes
+
 The "Essential Trio" (Multi-Language Core)
 These three tools alone will cover 90% of your users' needs with near-instant performance.
 

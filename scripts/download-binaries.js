@@ -1,0 +1,299 @@
+#!/usr/bin/env node
+/**
+ * Download pre-compiled binaries for external analysis tools
+ * 
+ * This script downloads and extracts binaries for:
+ * - Semgrep (security scanning)
+ * - Biome (JS/TS linting)
+ * - Ruff (Python linting)
+ * - TFLint (Terraform linting)
+ * 
+ * Note: Checkov is Python-based and difficult to bundle as a standalone binary,
+ * so it's treated as optional.
+ */
+
+const https = require('https');
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const { exec } = require('child_process');
+const { promisify } = require('util');
+
+const execAsync = promisify(exec);
+
+const BIN_DIR = path.join(__dirname, '..', 'bin');
+
+// Tool versions and download URLs
+const TOOLS = {
+    semgrep: {
+        version: 'v1.57.0',
+        platforms: {
+            'darwin-arm64': 'https://github.com/semgrep/semgrep/releases/download/v1.57.0/semgrep-v1.57.0-macos-arm64.zip',
+            'darwin-x64': 'https://github.com/semgrep/semgrep/releases/download/v1.57.0/semgrep-v1.57.0-macos-x86_64.zip',
+            'linux-x64': 'https://github.com/semgrep/semgrep/releases/download/v1.57.0/semgrep-v1.57.0-linux-x86_64.zip',
+            'win32-x64': 'https://github.com/semgrep/semgrep/releases/download/v1.57.0/semgrep-v1.57.0-windows-x86_64.zip',
+        },
+        binaryName: 'semgrep',
+    },
+    biome: {
+        version: 'v1.5.3',
+        platforms: {
+            'darwin-arm64': 'https://github.com/biomejs/biome/releases/download/cli%2Fv1.5.3/biome-darwin-arm64',
+            'darwin-x64': 'https://github.com/biomejs/biome/releases/download/cli%2Fv1.5.3/biome-darwin-x64',
+            'linux-x64': 'https://github.com/biomejs/biome/releases/download/cli%2Fv1.5.3/biome-linux-x64',
+            'win32-x64': 'https://github.com/biomejs/biome/releases/download/cli%2Fv1.5.3/biome-win32-x64.exe',
+        },
+        binaryName: 'biome',
+        isDirect: true, // Direct binary download, no extraction
+    },
+    ruff: {
+        version: 'v0.1.15',
+        platforms: {
+            'darwin-arm64': 'https://github.com/astral-sh/ruff/releases/download/v0.1.15/ruff-aarch64-apple-darwin.tar.gz',
+            'darwin-x64': 'https://github.com/astral-sh/ruff/releases/download/v0.1.15/ruff-x86_64-apple-darwin.tar.gz',
+            'linux-x64': 'https://github.com/astral-sh/ruff/releases/download/v0.1.15/ruff-x86_64-unknown-linux-gnu.tar.gz',
+            'win32-x64': 'https://github.com/astral-sh/ruff/releases/download/v0.1.15/ruff-x86_64-pc-windows-msvc.zip',
+        },
+        binaryName: 'ruff',
+    },
+    tflint: {
+        version: 'v0.50.3',
+        platforms: {
+            'darwin-arm64': 'https://github.com/terraform-linters/tflint/releases/download/v0.50.3/tflint_darwin_arm64.zip',
+            'darwin-x64': 'https://github.com/terraform-linters/tflint/releases/download/v0.50.3/tflint_darwin_amd64.zip',
+            'linux-x64': 'https://github.com/terraform-linters/tflint/releases/download/v0.50.3/tflint_linux_amd64.zip',
+            'win32-x64': 'https://github.com/terraform-linters/tflint/releases/download/v0.50.3/tflint_windows_amd64.zip',
+        },
+        binaryName: 'tflint',
+    },
+};
+
+/**
+ * Download a file from a URL
+ */
+function downloadFile(url, destPath) {
+    return new Promise((resolve, reject) => {
+        console.log(`  Downloading: ${url}`);
+        
+        const client = url.startsWith('https') ? https : http;
+        const file = fs.createWriteStream(destPath);
+        
+        const request = client.get(url, (response) => {
+            // Handle redirects
+            if (response.statusCode === 301 || response.statusCode === 302) {
+                file.close();
+                fs.unlinkSync(destPath);
+                return downloadFile(response.headers.location, destPath)
+                    .then(resolve)
+                    .catch(reject);
+            }
+            
+            if (response.statusCode !== 200) {
+                file.close();
+                fs.unlinkSync(destPath);
+                return reject(new Error(`Download failed: ${response.statusCode} ${response.statusMessage}`));
+            }
+            
+            response.pipe(file);
+            
+            file.on('finish', () => {
+                file.close();
+                console.log(`  Downloaded to: ${destPath}`);
+                resolve();
+            });
+        });
+        
+        request.on('error', (err) => {
+            file.close();
+            fs.unlinkSync(destPath);
+            reject(err);
+        });
+        
+        file.on('error', (err) => {
+            file.close();
+            fs.unlinkSync(destPath);
+            reject(err);
+        });
+    });
+}
+
+/**
+ * Extract archive (zip or tar.gz)
+ */
+async function extractArchive(archivePath, destDir, binaryName) {
+    const ext = path.extname(archivePath);
+    
+    console.log(`  Extracting: ${archivePath}`);
+    
+    if (ext === '.zip') {
+        // Use unzip command
+        await execAsync(`unzip -o "${archivePath}" -d "${destDir}"`);
+    } else if (archivePath.endsWith('.tar.gz')) {
+        // Use tar command
+        await execAsync(`tar -xzf "${archivePath}" -C "${destDir}"`);
+    }
+    
+    // Find the binary and move it to the correct location
+    const files = fs.readdirSync(destDir);
+    for (const file of files) {
+        const filePath = path.join(destDir, file);
+        const stat = fs.statSync(filePath);
+        
+        if (stat.isFile() && (file === binaryName || file.startsWith(binaryName))) {
+            const finalPath = path.join(destDir, binaryName);
+            if (filePath !== finalPath) {
+                fs.renameSync(filePath, finalPath);
+            }
+            // Make executable
+            fs.chmodSync(finalPath, 0o755);
+            console.log(`  Extracted binary: ${finalPath}`);
+            break;
+        }
+    }
+    
+    // Clean up archive
+    fs.unlinkSync(archivePath);
+    
+    // Clean up any extra files/directories
+    const finalBinary = path.join(destDir, binaryName);
+    for (const file of fs.readdirSync(destDir)) {
+        const filePath = path.join(destDir, file);
+        if (filePath !== finalBinary) {
+            try {
+                const stat = fs.statSync(filePath);
+                if (stat.isDirectory()) {
+                    fs.rmSync(filePath, { recursive: true, force: true });
+                } else {
+                    fs.unlinkSync(filePath);
+                }
+            } catch (err) {
+                // Ignore errors
+            }
+        }
+    }
+}
+
+/**
+ * Download and setup a tool for a specific platform
+ */
+async function downloadToolForPlatform(toolName, toolConfig, platform) {
+    const url = toolConfig.platforms[platform];
+    if (!url) {
+        console.log(`  ⚠️  No binary available for ${platform}`);
+        return;
+    }
+    
+    const platformDir = path.join(BIN_DIR, platform);
+    if (!fs.existsSync(platformDir)) {
+        fs.mkdirSync(platformDir, { recursive: true });
+    }
+    
+    const binaryName = toolConfig.binaryName;
+    const ext = platform === 'win32-x64' ? '.exe' : '';
+    const finalBinaryPath = path.join(platformDir, binaryName + ext);
+    
+    // Check if already downloaded
+    if (fs.existsSync(finalBinaryPath)) {
+        console.log(`  ✓ Already downloaded: ${finalBinaryPath}`);
+        return;
+    }
+    
+    try {
+        if (toolConfig.isDirect) {
+            // Direct binary download
+            await downloadFile(url, finalBinaryPath);
+            fs.chmodSync(finalBinaryPath, 0o755);
+        } else {
+            // Download archive and extract
+            const archiveExt = url.endsWith('.zip') ? '.zip' : '.tar.gz';
+            const archivePath = path.join(platformDir, `${binaryName}${archiveExt}`);
+            await downloadFile(url, archivePath);
+            await extractArchive(archivePath, platformDir, binaryName + ext);
+        }
+        
+        console.log(`  ✓ Installed: ${finalBinaryPath}`);
+    } catch (error) {
+        console.error(`  ✗ Failed to download ${toolName} for ${platform}:`, error.message);
+    }
+}
+
+/**
+ * Download all tools
+ */
+async function downloadAllTools() {
+    console.log('📦 Downloading external analysis tool binaries...\n');
+    
+    const platforms = ['darwin-arm64', 'darwin-x64', 'linux-x64', 'win32-x64'];
+    
+    for (const [toolName, toolConfig] of Object.entries(TOOLS)) {
+        console.log(`\n🔧 ${toolName} (${toolConfig.version})`);
+        
+        for (const platform of platforms) {
+            console.log(`\n  Platform: ${platform}`);
+            await downloadToolForPlatform(toolName, toolConfig, platform);
+        }
+    }
+    
+    console.log('\n✅ Binary download complete!');
+    console.log('\nNote: Checkov is Python-based and not bundled. It will be used if installed by the user.');
+}
+
+/**
+ * Create placeholder .gitkeep files
+ */
+function createGitkeepFiles() {
+    const platforms = ['darwin-arm64', 'darwin-x64', 'linux-x64', 'win32-x64'];
+    
+    for (const platform of platforms) {
+        const platformDir = path.join(BIN_DIR, platform);
+        const gitkeepPath = path.join(platformDir, '.gitkeep');
+        
+        if (!fs.existsSync(gitkeepPath)) {
+            fs.writeFileSync(gitkeepPath, '');
+        }
+    }
+}
+
+/**
+ * Main function
+ */
+async function main() {
+    const args = process.argv.slice(2);
+    const skipDownload = args.includes('--skip-download') || args.includes('--dry-run');
+    
+    // Ensure bin directory exists
+    if (!fs.existsSync(BIN_DIR)) {
+        fs.mkdirSync(BIN_DIR, { recursive: true });
+    }
+    
+    // Create gitkeep files to ensure directories are tracked
+    createGitkeepFiles();
+    
+    if (skipDownload) {
+        console.log('📦 Skipping binary download (--skip-download flag)');
+        console.log('✓ Directory structure created');
+        return;
+    }
+    
+    // Check for required commands
+    try {
+        await execAsync('which unzip');
+        await execAsync('which tar');
+    } catch (error) {
+        console.error('❌ Error: unzip and tar commands are required');
+        console.error('Install them with: brew install unzip (on macOS)');
+        process.exit(1);
+    }
+    
+    await downloadAllTools();
+}
+
+// Run if executed directly
+if (require.main === module) {
+    main().catch((error) => {
+        console.error('❌ Fatal error:', error);
+        process.exit(1);
+    });
+}
+
+module.exports = { downloadAllTools, TOOLS };

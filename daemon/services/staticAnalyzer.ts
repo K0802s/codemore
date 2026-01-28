@@ -115,8 +115,69 @@ export class StaticAnalyzer {
         this.filePath = filePath;
         this.content = content;
         this.lines = content.split('\n');
-        this.sourceFile = sourceFile || this.parseFile(filePath, content);
 
+        const issues: CodeIssue[] = [];
+        const ext = path.extname(filePath).toLowerCase();
+
+        // Route to specialized analyzers based on file type
+        switch (ext) {
+            case '.sql':
+                issues.push(...this.analyzeSQLPatterns());
+                break;
+            case '.json':
+            case '.jsonc':
+                issues.push(...this.analyzeJSONPatterns());
+                break;
+            case '.yaml':
+            case '.yml':
+                issues.push(...this.analyzeYAMLPatterns());
+                break;
+            case '.md':
+            case '.markdown':
+                // Minimal checks for markdown
+                issues.push(...this.analyzeMarkdownPatterns());
+                break;
+            case '.sh':
+            case '.bash':
+            case '.zsh':
+                issues.push(...this.analyzeShellPatterns());
+                break;
+            case '.dockerfile':
+            case '': // Dockerfile has no extension
+                if (path.basename(filePath).toLowerCase() === 'dockerfile') {
+                    issues.push(...this.analyzeDockerfilePatterns());
+                }
+                break;
+            case '.ts':
+            case '.tsx':
+            case '.js':
+            case '.jsx':
+            case '.mjs':
+            case '.cjs':
+                // Full TypeScript/JavaScript analysis
+                this.sourceFile = sourceFile || this.parseFile(filePath, content);
+                issues.push(...this.analyzeTypeScriptFile(context, ext));
+                break;
+            default:
+                // Try to parse as TypeScript for unknown JS-like files
+                if (content.includes('function ') || content.includes('const ') || content.includes('import ')) {
+                    try {
+                        this.sourceFile = this.parseFile(filePath, content);
+                        issues.push(...this.analyzeTypeScriptFile(context, ext));
+                    } catch {
+                        // Not a valid TS/JS file, skip
+                    }
+                }
+                break;
+        }
+
+        return issues;
+    }
+
+    /**
+     * Full TypeScript/JavaScript analysis
+     */
+    private analyzeTypeScriptFile(context: FileContext, ext: string): CodeIssue[] {
         const issues: CodeIssue[] = [];
 
         // Run all enabled analysis categories
@@ -145,7 +206,6 @@ export class StaticAnalyzer {
         }
 
         // React-specific checks for TSX/JSX files
-        const ext = path.extname(filePath).toLowerCase();
         if (ext === '.tsx' || ext === '.jsx') {
             issues.push(...this.analyzeReactPatterns());
         }
@@ -154,7 +214,476 @@ export class StaticAnalyzer {
     }
 
     // ========================================================================
-    // Complexity Analysis
+    // SQL Analysis
+    // ========================================================================
+
+    /**
+     * Analyze SQL files for common issues
+     */
+    private analyzeSQLPatterns(): CodeIssue[] {
+        const issues: CodeIssue[] = [];
+        const content = this.content.toUpperCase();
+
+        // Check for SELECT *
+        for (let i = 0; i < this.lines.length; i++) {
+            const line = this.lines[i];
+            const upperLine = line.toUpperCase();
+
+            if (/SELECT\s+\*/.test(upperLine)) {
+                issues.push(this.createIssue({
+                    id: `sql-select-star-${this.issueCounter++}`,
+                    title: 'Avoid SELECT *',
+                    description: 'Using SELECT * can impact performance and makes code harder to maintain. Explicitly list the columns you need.',
+                    category: 'performance',
+                    severity: 'warning',
+                    line: i,
+                    column: line.search(/SELECT\s+\*/i),
+                    endLine: i,
+                    endColumn: line.length,
+                    codeSnippet: line.trim(),
+                    confidence: 90,
+                }));
+            }
+
+            // Check for missing WHERE clause in UPDATE/DELETE
+            if (/\b(UPDATE|DELETE)\b/.test(upperLine) && !/WHERE/.test(content.slice(content.indexOf(upperLine)))) {
+                // Look ahead a few lines for WHERE
+                let hasWhere = false;
+                for (let j = i; j < Math.min(i + 5, this.lines.length); j++) {
+                    if (/WHERE/i.test(this.lines[j])) {
+                        hasWhere = true;
+                        break;
+                    }
+                    if (/;/.test(this.lines[j])) break; // Statement ended
+                }
+                
+                if (!hasWhere && /\bUPDATE\b/i.test(upperLine)) {
+                    issues.push(this.createIssue({
+                        id: `sql-update-no-where-${this.issueCounter++}`,
+                        title: 'UPDATE without WHERE clause',
+                        description: 'UPDATE statement without WHERE clause will modify all rows. This is usually a mistake.',
+                        category: 'bug',
+                        severity: 'error',
+                        line: i,
+                        column: 0,
+                        endLine: i,
+                        endColumn: line.length,
+                        codeSnippet: line.trim(),
+                        confidence: 85,
+                    }));
+                }
+                
+                if (!hasWhere && /\bDELETE\b/i.test(upperLine)) {
+                    issues.push(this.createIssue({
+                        id: `sql-delete-no-where-${this.issueCounter++}`,
+                        title: 'DELETE without WHERE clause',
+                        description: 'DELETE statement without WHERE clause will delete all rows. This is usually a mistake.',
+                        category: 'bug',
+                        severity: 'error',
+                        line: i,
+                        column: 0,
+                        endLine: i,
+                        endColumn: line.length,
+                        codeSnippet: line.trim(),
+                        confidence: 85,
+                    }));
+                }
+            }
+
+            // Check for SQL injection-prone patterns in stored procedures
+            if (/EXECUTE\s+IMMEDIATE|EXEC\s*\(|sp_executesql/i.test(upperLine)) {
+                issues.push(this.createIssue({
+                    id: `sql-dynamic-sql-${this.issueCounter++}`,
+                    title: 'Dynamic SQL execution',
+                    description: 'Dynamic SQL execution can be vulnerable to SQL injection. Ensure proper parameterization.',
+                    category: 'security',
+                    severity: 'warning',
+                    line: i,
+                    column: 0,
+                    endLine: i,
+                    endColumn: line.length,
+                    codeSnippet: line.trim(),
+                    confidence: 75,
+                }));
+            }
+
+            // Check for ORDER BY without LIMIT (potential performance issue)
+            if (/ORDER\s+BY/i.test(upperLine)) {
+                let hasLimit = false;
+                for (let j = i; j < Math.min(i + 5, this.lines.length); j++) {
+                    if (/\b(LIMIT|TOP|FETCH\s+FIRST|ROWNUM)/i.test(this.lines[j])) {
+                        hasLimit = true;
+                        break;
+                    }
+                    if (/;/.test(this.lines[j])) break;
+                }
+                
+                if (!hasLimit) {
+                    issues.push(this.createIssue({
+                        id: `sql-order-no-limit-${this.issueCounter++}`,
+                        title: 'ORDER BY without LIMIT',
+                        description: 'Ordering large result sets without LIMIT can cause performance issues.',
+                        category: 'performance',
+                        severity: 'hint',
+                        line: i,
+                        column: 0,
+                        endLine: i,
+                        endColumn: line.length,
+                        codeSnippet: line.trim(),
+                        confidence: 60,
+                    }));
+                }
+            }
+
+            // Check for missing indexes hints in large queries
+            if (/\bJOIN\b.*\bJOIN\b/i.test(line)) {
+                issues.push(this.createIssue({
+                    id: `sql-multiple-joins-${this.issueCounter++}`,
+                    title: 'Multiple JOINs in single query',
+                    description: 'Multiple JOINs can cause performance issues. Consider checking indexes on join columns.',
+                    category: 'performance',
+                    severity: 'hint',
+                    line: i,
+                    column: 0,
+                    endLine: i,
+                    endColumn: line.length,
+                    codeSnippet: line.trim(),
+                    confidence: 50,
+                }));
+            }
+        }
+
+        return issues;
+    }
+
+    // ========================================================================
+    // JSON Analysis
+    // ========================================================================
+
+    private analyzeJSONPatterns(): CodeIssue[] {
+        const issues: CodeIssue[] = [];
+
+        try {
+            JSON.parse(this.content);
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown parse error';
+            // Try to extract line number from error
+            const lineMatch = errorMessage.match(/line (\d+)/i) || errorMessage.match(/position (\d+)/);
+            const line = lineMatch ? parseInt(lineMatch[1], 10) - 1 : 0;
+
+            issues.push(this.createIssue({
+                id: `json-parse-error-${this.issueCounter++}`,
+                title: 'Invalid JSON',
+                description: `JSON parse error: ${errorMessage}`,
+                category: 'bug',
+                severity: 'error',
+                line: Math.max(0, line),
+                column: 0,
+                endLine: Math.max(0, line),
+                endColumn: 0,
+                codeSnippet: this.lines[Math.max(0, line)]?.trim() || '',
+                confidence: 100,
+            }));
+        }
+
+        // Check for trailing commas (common JSON error)
+        for (let i = 0; i < this.lines.length; i++) {
+            const line = this.lines[i];
+            if (/,\s*[\]}]/.test(line)) {
+                issues.push(this.createIssue({
+                    id: `json-trailing-comma-${this.issueCounter++}`,
+                    title: 'Trailing comma in JSON',
+                    description: 'Trailing commas are not allowed in strict JSON. Remove the comma before the closing bracket.',
+                    category: 'bug',
+                    severity: 'error',
+                    line: i,
+                    column: line.search(/,\s*[\]}]/),
+                    endLine: i,
+                    endColumn: line.length,
+                    codeSnippet: line.trim(),
+                    confidence: 95,
+                }));
+            }
+        }
+
+        return issues;
+    }
+
+    // ========================================================================
+    // YAML Analysis
+    // ========================================================================
+
+    private analyzeYAMLPatterns(): CodeIssue[] {
+        const issues: CodeIssue[] = [];
+
+        for (let i = 0; i < this.lines.length; i++) {
+            const line = this.lines[i];
+
+            // Check for tabs (YAML should use spaces)
+            if (/\t/.test(line)) {
+                issues.push(this.createIssue({
+                    id: `yaml-tabs-${this.issueCounter++}`,
+                    title: 'Tab character in YAML',
+                    description: 'YAML does not allow tabs for indentation. Use spaces instead.',
+                    category: 'bug',
+                    severity: 'error',
+                    line: i,
+                    column: line.indexOf('\t'),
+                    endLine: i,
+                    endColumn: line.length,
+                    codeSnippet: line.trim(),
+                    confidence: 100,
+                }));
+            }
+
+            // Check for inconsistent indentation
+            const leadingSpaces = line.match(/^(\s*)/)?.[1].length || 0;
+            if (leadingSpaces > 0 && leadingSpaces % 2 !== 0) {
+                issues.push(this.createIssue({
+                    id: `yaml-indent-${this.issueCounter++}`,
+                    title: 'Inconsistent YAML indentation',
+                    description: 'YAML indentation should use consistent 2-space increments.',
+                    category: 'code-smell',
+                    severity: 'warning',
+                    line: i,
+                    column: 0,
+                    endLine: i,
+                    endColumn: leadingSpaces,
+                    codeSnippet: line.trim(),
+                    confidence: 70,
+                }));
+            }
+
+            // Check for unquoted special values that might cause issues
+            if (/:\s*(yes|no|on|off|true|false)\s*$/i.test(line) && !/["']/.test(line)) {
+                issues.push(this.createIssue({
+                    id: `yaml-boolean-${this.issueCounter++}`,
+                    title: 'Unquoted boolean-like value',
+                    description: 'Values like yes/no/on/off are interpreted as booleans in YAML. Quote them if you want strings.',
+                    category: 'bug',
+                    severity: 'hint',
+                    line: i,
+                    column: 0,
+                    endLine: i,
+                    endColumn: line.length,
+                    codeSnippet: line.trim(),
+                    confidence: 65,
+                }));
+            }
+        }
+
+        return issues;
+    }
+
+    // ========================================================================
+    // Shell Script Analysis
+    // ========================================================================
+
+    private analyzeShellPatterns(): CodeIssue[] {
+        const issues: CodeIssue[] = [];
+
+        for (let i = 0; i < this.lines.length; i++) {
+            const line = this.lines[i];
+
+            // Check for unquoted variables
+            if (/\$[a-zA-Z_][a-zA-Z0-9_]*(?!\s*["\'])/m.test(line) && !/"\$/.test(line) && !/'\$/.test(line)) {
+                const match = line.match(/\$([a-zA-Z_][a-zA-Z0-9_]*)/);
+                if (match && !line.includes(`"$${match[1]}"`)) {
+                    issues.push(this.createIssue({
+                        id: `shell-unquoted-var-${this.issueCounter++}`,
+                        title: 'Unquoted variable',
+                        description: `Variable $${match[1]} should be quoted to prevent word splitting and globbing issues.`,
+                        category: 'bug',
+                        severity: 'warning',
+                        line: i,
+                        column: line.indexOf('$'),
+                        endLine: i,
+                        endColumn: line.length,
+                        codeSnippet: line.trim(),
+                        confidence: 70,
+                    }));
+                }
+            }
+
+            // Check for useless cat
+            if (/cat\s+[^\|]+\|\s*/.test(line)) {
+                issues.push(this.createIssue({
+                    id: `shell-useless-cat-${this.issueCounter++}`,
+                    title: 'Useless use of cat',
+                    description: 'This can be simplified by using input redirection instead of piping from cat.',
+                    category: 'code-smell',
+                    severity: 'hint',
+                    line: i,
+                    column: line.indexOf('cat'),
+                    endLine: i,
+                    endColumn: line.length,
+                    codeSnippet: line.trim(),
+                    confidence: 80,
+                }));
+            }
+
+            // Check for eval usage
+            if (/\beval\s/.test(line)) {
+                issues.push(this.createIssue({
+                    id: `shell-eval-${this.issueCounter++}`,
+                    title: 'Use of eval',
+                    description: 'eval can be a security risk if used with untrusted input. Consider alternatives.',
+                    category: 'security',
+                    severity: 'warning',
+                    line: i,
+                    column: line.indexOf('eval'),
+                    endLine: i,
+                    endColumn: line.length,
+                    codeSnippet: line.trim(),
+                    confidence: 85,
+                }));
+            }
+
+            // Check for missing shebang
+            if (i === 0 && !line.startsWith('#!')) {
+                issues.push(this.createIssue({
+                    id: `shell-no-shebang-${this.issueCounter++}`,
+                    title: 'Missing shebang',
+                    description: 'Shell scripts should start with a shebang (#!/bin/bash or #!/usr/bin/env bash).',
+                    category: 'best-practice',
+                    severity: 'hint',
+                    line: 0,
+                    column: 0,
+                    endLine: 0,
+                    endColumn: 0,
+                    codeSnippet: line.trim() || '(empty)',
+                    confidence: 90,
+                }));
+            }
+        }
+
+        return issues;
+    }
+
+    // ========================================================================
+    // Dockerfile Analysis
+    // ========================================================================
+
+    private analyzeDockerfilePatterns(): CodeIssue[] {
+        const issues: CodeIssue[] = [];
+
+        for (let i = 0; i < this.lines.length; i++) {
+            const line = this.lines[i].trim();
+
+            // Skip comments and empty lines
+            if (line.startsWith('#') || line === '') continue;
+
+            // Check for latest tag
+            if (/FROM\s+\S+:latest/i.test(line)) {
+                issues.push(this.createIssue({
+                    id: `docker-latest-tag-${this.issueCounter++}`,
+                    title: 'Using :latest tag',
+                    description: 'Using the :latest tag makes builds non-reproducible. Pin to a specific version.',
+                    category: 'best-practice',
+                    severity: 'warning',
+                    line: i,
+                    column: 0,
+                    endLine: i,
+                    endColumn: line.length,
+                    codeSnippet: line,
+                    confidence: 95,
+                }));
+            }
+
+            // Check for apt-get without -y
+            if (/apt-get\s+install(?!\s+-y)/i.test(line) && !/--assume-yes/.test(line)) {
+                issues.push(this.createIssue({
+                    id: `docker-apt-no-y-${this.issueCounter++}`,
+                    title: 'apt-get install without -y',
+                    description: 'Use apt-get install -y for non-interactive installation.',
+                    category: 'bug',
+                    severity: 'warning',
+                    line: i,
+                    column: 0,
+                    endLine: i,
+                    endColumn: line.length,
+                    codeSnippet: line,
+                    confidence: 90,
+                }));
+            }
+
+            // Check for COPY . . which copies everything
+            if (/COPY\s+\.\s+\./.test(line)) {
+                issues.push(this.createIssue({
+                    id: `docker-copy-all-${this.issueCounter++}`,
+                    title: 'COPY . . copies everything',
+                    description: 'COPY . . copies all files including .git, node_modules, etc. Use .dockerignore or specific paths.',
+                    category: 'performance',
+                    severity: 'warning',
+                    line: i,
+                    column: 0,
+                    endLine: i,
+                    endColumn: line.length,
+                    codeSnippet: line,
+                    confidence: 80,
+                }));
+            }
+
+            // Check for running as root
+            if (/^USER\s+root/i.test(line)) {
+                issues.push(this.createIssue({
+                    id: `docker-user-root-${this.issueCounter++}`,
+                    title: 'Running as root user',
+                    description: 'Running containers as root is a security risk. Create and use a non-root user.',
+                    category: 'security',
+                    severity: 'warning',
+                    line: i,
+                    column: 0,
+                    endLine: i,
+                    endColumn: line.length,
+                    codeSnippet: line,
+                    confidence: 85,
+                }));
+            }
+        }
+
+        return issues;
+    }
+
+    // ========================================================================
+    // Markdown Analysis
+    // ========================================================================
+
+    private analyzeMarkdownPatterns(): CodeIssue[] {
+        const issues: CodeIssue[] = [];
+
+        // Minimal checks for markdown
+        for (let i = 0; i < this.lines.length; i++) {
+            const line = this.lines[i];
+
+            // Check for broken links
+            const linkMatches = line.matchAll(/\[([^\]]*)\]\(([^)]*)\)/g);
+            for (const match of linkMatches) {
+                const url = match[2];
+                if (url.startsWith('#') && !this.content.toLowerCase().includes(`# ${url.slice(1).toLowerCase()}`)) {
+                    // Internal anchor that might not exist
+                    issues.push(this.createIssue({
+                        id: `md-broken-anchor-${this.issueCounter++}`,
+                        title: 'Potentially broken anchor link',
+                        description: `Anchor ${url} may not exist in the document.`,
+                        category: 'bug',
+                        severity: 'hint',
+                        line: i,
+                        column: line.indexOf(url),
+                        endLine: i,
+                        endColumn: line.indexOf(url) + url.length,
+                        codeSnippet: match[0],
+                        confidence: 50,
+                    }));
+                }
+            }
+        }
+
+        return issues;
+    }
+
+    // ========================================================================
+    // Complexity Analysis (TypeScript/JavaScript)
     // ========================================================================
 
     private analyzeComplexity(context: FileContext): CodeIssue[] {

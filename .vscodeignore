@@ -12,10 +12,15 @@ node_modules/**
 *.map
 *.ts
 !dist/**
+!bin/**
 webpack.config.js
+webpack.daemon.config.js
 webpack.webview.config.js
 tsconfig.json
 **/*.md
 !README.md
 .git/**
 prompy.md
+scripts/**
+improvements.md
+logs.md

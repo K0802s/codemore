@@ -3,12 +3,22 @@
  * 
  * Handles communication with LLM APIs for code analysis.
  * Supports multiple providers (OpenAI, Anthropic, Gemini, local).
- * Falls back to advanced static analysis when AI is not available.
+ * 
+ * Analysis Pipeline (in order of execution):
+ * 1. External Tools (Semgrep, Biome, Ruff, TFLint, Checkov) - Industry-standard, fast
+ * 2. Built-in Static Analysis - TypeScript AST-based analysis
+ * 3. AI Analysis (optional) - Deep semantic analysis when API key configured
+ * 
+ * External tool results are used to:
+ * - Provide instant feedback without AI costs
+ * - Identify "hot spots" for focused AI analysis
+ * - Give AI better context about existing issues
  */
 
 import { DaemonConfig, CodeIssue, CodeSuggestion, FileContext, IssueSeverity } from '../../shared/protocol';
 import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
 import { StaticAnalyzer, StaticAnalyzerConfig } from './staticAnalyzer';
+import { ExternalToolRunner, ExternalToolsConfig } from './externalToolRunner';
 
 interface CacheEntry {
     response: string;
@@ -23,6 +33,20 @@ interface HotSpot {
     endLine: number;
     reason: string;
     severity: IssueSeverity;
+    source: 'static' | 'external';
+}
+
+/**
+ * Analysis result with metadata for performance tracking
+ */
+interface AnalysisResult {
+    issues: CodeIssue[];
+    sources: {
+        external: number;
+        static: number;
+        ai: number;
+    };
+    executionTimeMs: number;
 }
 
 export class AiService {
@@ -30,10 +54,12 @@ export class AiService {
     private config: DaemonConfig;
     private geminiModel: GenerativeModel | null = null;
     private staticAnalyzer: StaticAnalyzer;
+    private externalToolRunner: ExternalToolRunner;
 
     constructor(config: DaemonConfig) {
         this.config = config;
         this.staticAnalyzer = new StaticAnalyzer();
+        this.externalToolRunner = new ExternalToolRunner();
         this.initGemini();
     }
 
@@ -71,7 +97,27 @@ export class AiService {
     }
 
     /**
+     * Update external tools configuration
+     */
+    updateExternalToolsConfig(config: Partial<ExternalToolsConfig>): void {
+        this.externalToolRunner.updateConfig(config);
+    }
+
+    /**
+     * Get external tool status for diagnostics
+     */
+    getExternalToolStatus(): Record<string, boolean> {
+        return this.externalToolRunner.getToolStatus();
+    }
+
+    /**
      * Analyze code and generate issues
+     * 
+     * Analysis Pipeline:
+     * 1. External tools (Semgrep, Biome, Ruff, etc.) - parallel, fast
+     * 2. Built-in static analysis - TypeScript AST-based
+     * 3. AI analysis (optional) - focused on hot spots identified by steps 1 & 2
+     * 
      * Uses a hybrid approach: static analysis always runs, AI enhances when available
      */
     async analyzeCode(
@@ -79,46 +125,84 @@ export class AiService {
         content: string,
         context: FileContext
     ): Promise<CodeIssue[]> {
-        // Always run static analysis first - it's fast and comprehensive
-        const staticIssues = this.performStaticAnalysis(filePath, content, context);
+        const startTime = Date.now();
+        let externalIssueCount = 0;
+        let staticIssueCount = 0;
+        let aiIssueCount = 0;
 
-        // If no API key, return static analysis only
+        // Step 1: Run external tools in parallel with built-in static analysis
+        // This maximizes performance by utilizing external tool parallelism
+        const [externalIssues, staticIssues] = await Promise.all([
+            this.runExternalTools(filePath, content),
+            Promise.resolve(this.performStaticAnalysis(filePath, content, context)),
+        ]);
+
+        externalIssueCount = externalIssues.length;
+        staticIssueCount = staticIssues.length;
+
+        // Step 2: Merge external and static issues, deduplicating
+        const combinedIssues = this.mergeIssues(externalIssues, staticIssues);
+
+        console.log(`[AiService] External tools: ${externalIssueCount} issues, Static analysis: ${staticIssueCount} issues`);
+
+        // If no API key, return combined analysis
         if (!this.config.apiKey) {
-            console.log(`[AiService] No API key configured, returning ${staticIssues.length} static analysis issues`);
-            return staticIssues;
+            const totalTime = Date.now() - startTime;
+            console.log(`[AiService] No API key configured, returning ${combinedIssues.length} total issues (${totalTime}ms)`);
+            return combinedIssues;
         }
 
         // Check cache for AI results
         const cacheKey = this.getCacheKey(filePath, content);
         const cached = this.getFromCache(cacheKey);
         if (cached) {
-            // Merge cached AI issues with static issues
+            // Merge cached AI issues with combined issues
             const aiIssues = JSON.parse(cached) as CodeIssue[];
-            return this.mergeIssues(staticIssues, aiIssues);
+            return this.mergeIssues(combinedIssues, aiIssues);
         }
 
-        // Use static analysis to identify "hot spots" for AI focus
+        // Step 3: Use combined issues to identify "hot spots" for AI focus
         // This saves API costs by only sending complex/problematic areas
-        const hotSpots = this.identifyHotSpots(staticIssues);
+        // External tool findings provide additional context for AI
+        const hotSpots = this.identifyHotSpots(combinedIssues);
+        const externalContext = this.externalToolRunner.getAvailableToolsContext();
         
         try {
-            const aiIssues = await this.callAiApi(filePath, content, context, hotSpots);
+            const aiIssues = await this.callAiApi(filePath, content, context, hotSpots, externalContext);
 
             // Cache the AI result
             this.setCache(cacheKey, JSON.stringify(aiIssues));
 
-            // Merge static and AI issues, deduplicating similar findings
-            return this.mergeIssues(staticIssues, aiIssues);
+            // Merge all issues: external + static + AI
+            const totalTime = Date.now() - startTime;
+            const finalIssues = this.mergeIssues(combinedIssues, aiIssues);
+            console.log(`[AiService] AI analysis added ${aiIssues.length} issues, total: ${finalIssues.length} (${totalTime}ms)`);
+            return finalIssues;
         } catch (error) {
-            console.error('[AiService] API call failed, returning static analysis only:', error);
-            // Static analysis already ran, just return those issues
-            return staticIssues;
+            console.error('[AiService] API call failed, returning combined analysis only:', error);
+            // External + static analysis already ran, return those issues
+            return combinedIssues;
+        }
+    }
+
+    /**
+     * Run external analysis tools on a file
+     * These are industry-standard tools like Semgrep, Biome, Ruff, etc.
+     */
+    private async runExternalTools(filePath: string, content: string): Promise<CodeIssue[]> {
+        try {
+            return await this.externalToolRunner.analyzeFile(filePath, content);
+        } catch (error) {
+            console.error('[AiService] External tool analysis failed:', error);
+            return [];
         }
     }
 
     /**
      * Identify "hot spots" - complex or problematic areas that AI should focus on
      * This enables cost-effective AI usage by targeting problem areas
+     * 
+     * Hot spots are identified from both external tool findings and static analysis
      */
     private identifyHotSpots(issues: CodeIssue[]): HotSpot[] {
         const hotSpots: HotSpot[] = [];
@@ -139,18 +223,31 @@ export class AiService {
             // 1. High severity (error or warning)
             // 2. Multiple issues in same area
             // 3. Complexity-related issues
+            // 4. Security issues from external tools (Semgrep, Checkov)
             const isHighSeverity = issue.severity === 'error' || issue.severity === 'warning';
             const hasMultipleIssues = issueCount >= 2;
             const isComplexityIssue = issue.id.includes('cyclomatic') || 
                                        issue.id.includes('cognitive') || 
                                        issue.id.includes('nesting');
+            const isSecurityIssue = issue.category === 'security' ||
+                                     issue.id.startsWith('semgrep-') ||
+                                     issue.id.startsWith('checkov-');
 
-            if (isHighSeverity || hasMultipleIssues || isComplexityIssue) {
+            if (isHighSeverity || hasMultipleIssues || isComplexityIssue || isSecurityIssue) {
+                // Determine source based on issue ID prefix
+                const source: 'static' | 'external' = 
+                    issue.id.startsWith('semgrep-') || 
+                    issue.id.startsWith('biome-') || 
+                    issue.id.startsWith('ruff-') ||
+                    issue.id.startsWith('tflint-') ||
+                    issue.id.startsWith('checkov-') ? 'external' : 'static';
+
                 hotSpots.push({
                     startLine: issue.location.range.start.line,
                     endLine: issue.location.range.end.line,
                     reason: issue.title,
                     severity: issue.severity,
+                    source,
                 });
             }
         }
@@ -247,14 +344,16 @@ export class AiService {
 
     /**
      * Call the AI API
+     * Provides external tool context to help AI understand what has already been checked
      */
     private async callAiApi(
         filePath: string,
         content: string,
         context: FileContext,
-        hotSpots: HotSpot[] = []
+        hotSpots: HotSpot[] = [],
+        externalToolContext: string = ''
     ): Promise<CodeIssue[]> {
-        const prompt = this.buildPrompt(filePath, content, context, hotSpots);
+        const prompt = this.buildPrompt(filePath, content, context, hotSpots, externalToolContext);
 
         switch (this.config.aiProvider) {
             case 'openai':
@@ -471,23 +570,37 @@ Return ONLY a valid JSON array, no additional text or markdown.`;
     }
 
     /**
-     * Build analysis prompt
+     * Build analysis prompt with external tool context
+     * The prompt informs AI about what tools have already checked,
+     * so it can focus on deeper semantic issues
      */
     private buildPrompt(
         filePath: string, 
         content: string, 
         context: FileContext,
-        hotSpots: HotSpot[] = []
+        hotSpots: HotSpot[] = [],
+        externalToolContext: string = ''
     ): string {
         // Build hotspot guidance for the AI
         let hotSpotSection = '';
         if (hotSpots.length > 0) {
             const hotSpotDetails = hotSpots.map(hs => 
-                `  - Lines ${hs.startLine}-${hs.endLine}: ${hs.reason} (${hs.severity})`
+                `  - Lines ${hs.startLine}-${hs.endLine}: ${hs.reason} (${hs.severity}, detected by: ${hs.source})`
             ).join('\n');
             hotSpotSection = `
-PRIORITY AREAS (focus analysis here):
+PRIORITY AREAS (focus analysis here - issues detected by static tools):
 ${hotSpotDetails}
+
+`;
+        }
+
+        // Build external tool context section
+        let toolContextSection = '';
+        if (externalToolContext) {
+            toolContextSection = `
+STATIC ANALYSIS ALREADY PERFORMED:
+${externalToolContext}
+The following checks have already been run. Focus on issues that these tools CANNOT detect.
 
 `;
         }
@@ -495,7 +608,7 @@ ${hotSpotDetails}
         return `Analyze this ${context.language} code for issues. Return a JSON array of issues.
 
 File: ${filePath}
-${hotSpotSection}
+${toolContextSection}${hotSpotSection}
 Code:
 \`\`\`${context.language}
 ${content.slice(0, 5000)} ${content.length > 5000 ? '\n... (truncated)' : ''}
@@ -506,13 +619,21 @@ Context:
 - Imports: ${context.imports.map(i => i.module).join(', ')}
 - Dependencies: ${context.dependencies.join(', ')}
 
-Focus on finding issues that static analysis cannot detect:
-- Logic errors and edge cases
-- API misuse patterns
-- Race conditions
-- Memory leaks
+Focus on finding issues that static analysis tools (ESLint, Semgrep, Ruff, etc.) CANNOT detect:
+- Logic errors and edge cases in business logic
+- API misuse patterns and incorrect library usage
+- Race conditions and concurrency bugs
+- Memory leaks and resource management issues
 - Incorrect algorithm implementations
 - Missing error handling in complex scenarios
+- Architectural issues and design flaws
+- Context-dependent bugs that require understanding program flow
+
+DO NOT report:
+- Style issues (already caught by Biome/Ruff)
+- Common security patterns (already caught by Semgrep)
+- Unused variables or imports (already caught by static analysis)
+- Type errors (already caught by TypeScript)
 
 Return issues in this JSON format:
 [

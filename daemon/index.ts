@@ -132,7 +132,11 @@ const handlers: Record<string, RequestHandler> = {
             });
 
             analysisQueue.onIssuesFound((issues) => {
-                notify('daemon/issuesUpdated', { issues });
+                // Send all accumulated issues from contextMap, not just the current batch
+                if (contextMap) {
+                    const allIssues = contextMap.getAllIssues();
+                    notify('daemon/issuesUpdated', { issues: allIssues });
+                }
             });
 
             // Initialize file watcher
@@ -378,12 +382,49 @@ const handlers: Record<string, RequestHandler> = {
         // Update services with new config
         if (aiService) {
             aiService.updateConfig(state.config);
+            
+            // Update external tools config if provided
+            if (config.externalTools) {
+                aiService.updateExternalToolsConfig(config.externalTools);
+            }
         }
 
         if (fileWatcher && config.excludePatterns) {
             fileWatcher.updateExcludePatterns(config.excludePatterns);
         }
 
+        return { success: true };
+    },
+
+    /**
+     * Get external tool status
+     */
+    async getExternalToolStatus(): Promise<{ tools: Record<string, { available: boolean }> }> {
+        if (!aiService) {
+            throw new Error('Daemon not initialized');
+        }
+
+        const toolStatus = aiService.getExternalToolStatus();
+        const tools: Record<string, { available: boolean }> = {};
+        
+        for (const [tool, available] of Object.entries(toolStatus)) {
+            tools[tool] = { available };
+        }
+
+        return { tools };
+    },
+
+    /**
+     * Update external tools configuration
+     */
+    async setExternalToolsConfig(params: unknown): Promise<{ success: boolean }> {
+        const { config } = params as { config: Partial<Record<string, { enabled?: boolean; path?: string; timeout?: number }>> };
+
+        if (!aiService) {
+            throw new Error('Daemon not initialized');
+        }
+
+        aiService.updateExternalToolsConfig(config);
         return { success: true };
     },
 };
