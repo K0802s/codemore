@@ -7,13 +7,10 @@
  * Based on improvements.md specification.
  */
 
-import { CodeIssue, IssueSeverity, IssueCategory } from '../../shared/protocol';
+import { CodeIssue, Severity, OldSeverity } from '../../shared/protocol';
 
-// Canonical severity levels as per spec
-export type CanonicalSeverity = 'BLOCKER' | 'CRITICAL' | 'MAJOR' | 'MINOR' | 'INFO';
-
-// Mapping from canonical to VS Code severity
-const CANONICAL_TO_VSCODE: Record<CanonicalSeverity, IssueSeverity> = {
+// Mapping from canonical Severity to VS Code OldSeverity (for backward compatibility)
+const SEVERITY_TO_OLD: Record<Severity, OldSeverity> = {
     'BLOCKER': 'error',
     'CRITICAL': 'error',
     'MAJOR': 'warning',
@@ -21,9 +18,17 @@ const CANONICAL_TO_VSCODE: Record<CanonicalSeverity, IssueSeverity> = {
     'INFO': 'hint',
 };
 
+// Mapping from OldSeverity to canonical Severity (for migrating old issues)
+const OLD_TO_SEVERITY: Record<OldSeverity, Severity> = {
+    'error': 'CRITICAL',
+    'warning': 'MAJOR',
+    'info': 'MINOR',
+    'hint': 'INFO',
+};
+
 interface RemappingRule {
     pattern: RegExp | string;
-    severity: CanonicalSeverity;
+    severity: Severity;
     condition?: (issue: CodeIssue) => boolean;
 }
 
@@ -84,11 +89,11 @@ export class SeverityRemapper {
     ];
 
     /**
-     * Re-map issue severity based on rules
+     * Re-map issue severity based on rules.
+     * The issue.severity field is now the canonical Severity.
+     * The old severity is stored in issue.oldSeverity for backward compatibility.
      */
     remapIssue(issue: CodeIssue): CodeIssue {
-        const originalSeverity = issue.severity;
-        
         // Step 1: Apply rule-based mapping
         let canonicalSeverity = this.applyRuleBasedMapping(issue);
 
@@ -104,7 +109,7 @@ export class SeverityRemapper {
             
             // Track stats
             if (preModifierSeverity !== canonicalSeverity) {
-                const levels: CanonicalSeverity[] = ['INFO', 'MINOR', 'MAJOR', 'CRITICAL', 'BLOCKER'];
+                const levels: Severity[] = ['INFO', 'MINOR', 'MAJOR', 'CRITICAL', 'BLOCKER'];
                 const preIndex = levels.indexOf(preModifierSeverity);
                 const postIndex = levels.indexOf(canonicalSeverity);
                 if (postIndex > preIndex) {
@@ -115,20 +120,21 @@ export class SeverityRemapper {
             }
         }
 
-        // Step 4: Map to VS Code severity
-        const finalSeverity = canonicalSeverity
-            ? CANONICAL_TO_VSCODE[canonicalSeverity]
-            : issue.severity; // Keep original if no rule matched
+        // If no rule matched, keep the existing severity (which is now canonical)
+        const finalSeverity = canonicalSeverity || issue.severity;
 
         // Track remapping
-        if (finalSeverity !== originalSeverity || canonicalSeverity) {
+        if (finalSeverity !== issue.severity) {
             this.remappingStats.remapped++;
         }
+
+        // Calculate oldSeverity for backward compatibility
+        const oldSeverity = SEVERITY_TO_OLD[finalSeverity];
 
         return {
             ...issue,
             severity: finalSeverity,
-            canonicalSeverity: canonicalSeverity || undefined, // Store for UI display
+            oldSeverity, // For backward compatibility only - DO NOT use in UI
         };
     }
 
@@ -152,7 +158,7 @@ export class SeverityRemapper {
     /**
      * Apply rule-based mapping
      */
-    private applyRuleBasedMapping(issue: CodeIssue): CanonicalSeverity | null {
+    private applyRuleBasedMapping(issue: CodeIssue): Severity | null {
         const allRules = [
             ...this.sqlRules,
             ...this.reactRules,
@@ -189,7 +195,7 @@ export class SeverityRemapper {
     /**
      * Map complexity severity based on measured value
      */
-    private mapComplexitySeverity(issue: CodeIssue): CanonicalSeverity {
+    private mapComplexitySeverity(issue: CodeIssue): Severity {
         // Try to extract complexity value from description or title
         const complexityMatch = issue.description.match(/complexity[:\s]+(\d+)/i) ||
             issue.title.match(/complexity[:\s]+(\d+)/i) ||
@@ -211,8 +217,8 @@ export class SeverityRemapper {
      */
     private applyPostProcessingModifiers(
         issue: CodeIssue,
-        currentSeverity: CanonicalSeverity
-    ): CanonicalSeverity {
+        currentSeverity: Severity
+    ): Severity {
         // Auto-downgrade logic
         if (this.shouldDowngrade(issue)) {
             return this.downgradeSeverity(currentSeverity);
@@ -256,8 +262,8 @@ export class SeverityRemapper {
     /**
      * Downgrade severity by one level
      */
-    private downgradeSeverity(severity: CanonicalSeverity): CanonicalSeverity {
-        const levels: CanonicalSeverity[] = ['BLOCKER', 'CRITICAL', 'MAJOR', 'MINOR', 'INFO'];
+    private downgradeSeverity(severity: Severity): Severity {
+        const levels: Severity[] = ['BLOCKER', 'CRITICAL', 'MAJOR', 'MINOR', 'INFO'];
         const currentIndex = levels.indexOf(severity);
         const newIndex = Math.min(currentIndex + 1, levels.length - 1);
         return levels[newIndex];
@@ -266,8 +272,8 @@ export class SeverityRemapper {
     /**
      * Upgrade severity by one level (max = CRITICAL per spec)
      */
-    private upgradeSeverity(severity: CanonicalSeverity): CanonicalSeverity {
-        const levels: CanonicalSeverity[] = ['INFO', 'MINOR', 'MAJOR', 'CRITICAL'];
+    private upgradeSeverity(severity: Severity): Severity {
+        const levels: Severity[] = ['INFO', 'MINOR', 'MAJOR', 'CRITICAL'];
         const currentIndex = levels.indexOf(severity);
         if (currentIndex === -1) return severity;
         
@@ -284,28 +290,16 @@ export class SeverityRemapper {
     getDistributionStats(issues: CodeIssue[]): Record<string, number> {
         const remapped = this.remapIssues(issues);
         const stats: Record<string, number> = {
-            blocker: 0,
-            critical: 0,
-            major: 0,
-            minor: 0,
-            info: 0,
+            BLOCKER: 0,
+            CRITICAL: 0,
+            MAJOR: 0,
+            MINOR: 0,
+            INFO: 0,
         };
 
         for (const issue of remapped) {
-            if (issue.severity === 'error') {
-                // Check if it's BLOCKER or CRITICAL by re-applying rules
-                const canonical = this.applyRuleBasedMapping(issue) || this.mapComplexitySeverity(issue);
-                if (canonical === 'BLOCKER') {
-                    stats.blocker++;
-                } else {
-                    stats.critical++;
-                }
-            } else if (issue.severity === 'warning') {
-                stats.major++;
-            } else if (issue.severity === 'info') {
-                stats.minor++;
-            } else {
-                stats.info++;
+            if (issue.severity in stats) {
+                stats[issue.severity]++;
             }
         }
 

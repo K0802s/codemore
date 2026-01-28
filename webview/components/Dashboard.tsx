@@ -5,7 +5,7 @@
  */
 
 import React from 'react';
-import { CodeHealthMetrics, CodeIssue, IssueSeverity, IssueCategory, CanonicalSeverity } from '../types';
+import { CodeHealthMetrics, CodeIssue, Severity, IssueCategory } from '../types';
 import {
     Bug,
     AlertTriangle,
@@ -41,24 +41,23 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, issues, fileDiscovery, o
         );
     }
 
-    const getSeverityColor = (severity: IssueSeverity, canonicalSeverity?: CanonicalSeverity): string => {
-        // Use canonical severity for better color coding if available
-        if (canonicalSeverity) {
-            switch (canonicalSeverity) {
-                case 'BLOCKER': return '#d32f2f'; // Dark red
-                case 'CRITICAL': return '#f44336'; // Red
-                case 'MAJOR': return '#ff9800'; // Orange
-                case 'MINOR': return '#2196f3'; // Blue
-                case 'INFO': return '#9e9e9e'; // Gray
-            }
-        }
-        
-        // Fallback to standard severity colors
+    const getSeverityColor = (severity: Severity): string => {
         switch (severity) {
-            case 'error': return 'var(--color-error)';
-            case 'warning': return 'var(--color-warning)';
-            case 'info': return 'var(--color-info)';
-            case 'hint': return 'var(--color-hint)';
+            case 'BLOCKER': return '#d32f2f'; // Dark red
+            case 'CRITICAL': return '#f44336'; // Red
+            case 'MAJOR': return '#ff9800'; // Orange
+            case 'MINOR': return '#2196f3'; // Blue
+            case 'INFO': return '#9e9e9e'; // Gray
+        }
+    };
+
+    const getSeverityOrder = (severity: Severity): number => {
+        switch (severity) {
+            case 'BLOCKER': return 0;
+            case 'CRITICAL': return 1;
+            case 'MAJOR': return 2;
+            case 'MINOR': return 3;
+            case 'INFO': return 4;
         }
     };
 
@@ -98,20 +97,17 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, issues, fileDiscovery, o
         return `${Math.round(minutes / 480)}d`;
     };
 
-    // Get top issues
+    // Get top issues sorted by severity
     const topIssues = issues
-        .sort((a, b) => {
-            const severityOrder = { error: 0, warning: 1, info: 2, hint: 3 };
-            return severityOrder[a.severity] - severityOrder[b.severity];
-        })
+        .sort((a, b) => getSeverityOrder(a.severity) - getSeverityOrder(b.severity))
         .slice(0, 5);
 
     return (
         <div className="dashboard">
-            {/* Health Score */}
+            {/* Health Score - show actual score or N/A only if no files analyzed */}
             <div className="score-card">
                 <div className="score-circle" style={{ borderColor: getScoreColor(metrics.overallScore || 0) }}>
-                    <span className="score-value">{metrics.overallScore !== undefined && metrics.overallScore !== null && metrics.overallScore > 0 ? Math.round(metrics.overallScore) : 'N/A'}</span>
+                    <span className="score-value">{metrics.filesAnalyzed > 0 ? Math.round(metrics.overallScore) : 'N/A'}</span>
                     <span className="score-label">Health Score</span>
                 </div>
             </div>
@@ -197,7 +193,7 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, issues, fileDiscovery, o
             <div className="section">
                 <h3 className="section-title">Issues by Severity</h3>
                 <div className="severity-bars">
-                    {(Object.entries(metrics.issuesBySeverity) as [IssueSeverity, number][]).map(
+                    {(Object.entries(metrics.issuesBySeverity) as [Severity, number][]).map(
                         ([severity, count]) => (
                             <div key={severity} className="severity-bar-item">
                                 <div className="severity-bar-label">
@@ -219,39 +215,6 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, issues, fileDiscovery, o
                     )}
                 </div>
             </div>
-
-            {/* Issues by Canonical Severity */}
-            {issues.some(issue => issue.canonicalSeverity) && (
-                <div className="section">
-                    <h3 className="section-title">Issues by Canonical Severity</h3>
-                    <div className="severity-bars">
-                        {(['BLOCKER', 'CRITICAL', 'MAJOR', 'MINOR', 'INFO'] as CanonicalSeverity[]).map(
-                            (severity) => {
-                                const count = issues.filter(issue => issue.canonicalSeverity === severity).length;
-                                if (count === 0) return null;
-                                return (
-                                    <div key={severity} className="severity-bar-item">
-                                        <div className="severity-bar-label">
-                                            <span className="severity-dot" style={{ backgroundColor: getSeverityColor('error', severity) }} />
-                                            <span className="severity-name">{severity}</span>
-                                            <span className="severity-count">{count}</span>
-                                        </div>
-                                        <div className="severity-bar-track">
-                                            <div
-                                                className="severity-bar-fill"
-                                                style={{
-                                                    width: `${Math.min(100, (count / Math.max(1, issues.length)) * 100)}%`,
-                                                    backgroundColor: getSeverityColor('error', severity),
-                                                }}
-                                            />
-                                        </div>
-                                    </div>
-                                );
-                            }
-                        )}
-                    </div>
-                </div>
-            )}
 
             {/* Issues by Category */}
             <div className="section">
@@ -283,10 +246,9 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, issues, fileDiscovery, o
                             >
                                 <span
                                     className="issue-severity-badge"
-                                    style={{ backgroundColor: getSeverityColor(issue.severity, issue.canonicalSeverity) }}
-                                    title={issue.canonicalSeverity ? `Canonical: ${issue.canonicalSeverity}` : undefined}
+                                    style={{ backgroundColor: getSeverityColor(issue.severity) }}
                                 >
-                                    {issue.canonicalSeverity || issue.severity}
+                                    {issue.severity}
                                 </span>
                                 <span className="issue-title">{issue.title}</span>
                                 <span className="issue-file">

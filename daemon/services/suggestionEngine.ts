@@ -123,10 +123,11 @@ export class SuggestionEngine {
      */
     private calculatePriority(issue: CodeIssue): number {
         const severityWeights = {
-            'error': 100,
-            'warning': 60,
-            'info': 30,
-            'hint': 10,
+            'BLOCKER': 120,
+            'CRITICAL': 100,
+            'MAJOR': 60,
+            'MINOR': 30,
+            'INFO': 10,
         };
 
         const categoryWeights = {
@@ -139,7 +140,7 @@ export class SuggestionEngine {
             'accessibility': 10,
         };
 
-        const severityScore = severityWeights[issue.severity] || 0;
+        const severityScore = severityWeights[issue.severity as keyof typeof severityWeights] || 0;
         const categoryScore = categoryWeights[issue.category] || 0;
         const confidenceScore = issue.confidence;
         const impactScore = issue.impact;

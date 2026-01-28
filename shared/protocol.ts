@@ -26,10 +26,18 @@ export interface FileLocation {
 // Issue & Suggestion Types
 // ============================================================================
 
-export type IssueSeverity = 'error' | 'warning' | 'info' | 'hint';
+// Legacy severity type - kept for backward compatibility only
+// DO NOT use in UI or logic - use Severity instead
+export type OldSeverity = 'error' | 'warning' | 'info' | 'hint';
 
-// Canonical severity levels for improved UX (maps to IssueSeverity)
-export type CanonicalSeverity = 'BLOCKER' | 'CRITICAL' | 'MAJOR' | 'MINOR' | 'INFO';
+// Canonical severity levels - use this everywhere in UI and logic
+export type Severity = 'BLOCKER' | 'CRITICAL' | 'MAJOR' | 'MINOR' | 'INFO';
+
+// Deprecated: Use Severity instead
+/** @deprecated Use Severity instead */
+export type IssueSeverity = OldSeverity;
+/** @deprecated Use Severity instead */
+export type CanonicalSeverity = Severity;
 
 export type IssueCategory =
     | 'bug'
@@ -45,8 +53,8 @@ export interface CodeIssue {
     title: string;
     description: string;
     category: IssueCategory;
-    severity: IssueSeverity;
-    canonicalSeverity?: CanonicalSeverity; // Optional enhanced severity for UI
+    severity: Severity; // Canonical severity - use this in UI and logic
+    oldSeverity?: OldSeverity; // Legacy severity for backward compatibility only - DO NOT use in UI
     location: FileLocation;
     codeSnippet: string;
     confidence: number; // 0-100
@@ -131,7 +139,7 @@ export interface ProjectContext {
 export interface CodeHealthMetrics {
     overallScore: number; // 0-100
     issuesByCategory: Record<IssueCategory, number>;
-    issuesBySeverity: Record<IssueSeverity, number>;
+    issuesBySeverity: Record<Severity, number>;
     filesAnalyzed: number;
     totalFiles: number;
     linesOfCode: number;
@@ -378,7 +386,7 @@ export type ExtensionToWebviewMessage =
 
 export interface IssueFilter {
     categories?: IssueCategory[];
-    severities?: IssueSeverity[];
+    severities?: Severity[];
     filePath?: string;
     searchQuery?: string;
     sortBy?: 'severity' | 'confidence' | 'impact' | 'date';

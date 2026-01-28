@@ -12,7 +12,7 @@ import {
     ProjectContext,
     CodeHealthMetrics,
     CodeIssue,
-    IssueSeverity,
+    Severity,
     IssueCategory,
 } from '../../shared/protocol';
 
@@ -292,11 +292,12 @@ export class ContextMap {
             'best-practice': 0,
         };
 
-        const issuesBySeverity: Record<IssueSeverity, number> = {
-            'error': 0,
-            'warning': 0,
-            'info': 0,
-            'hint': 0,
+        const issuesBySeverity: Record<Severity, number> = {
+            'BLOCKER': 0,
+            'CRITICAL': 0,
+            'MAJOR': 0,
+            'MINOR': 0,
+            'INFO': 0,
         };
 
         let totalIssues = 0;
@@ -327,19 +328,22 @@ export class ContextMap {
         // If no files analyzed, return 0 so UI can show N/A
         let overallScore = filesAnalyzed > 0 ? 100 : 0;
         if (filesAnalyzed > 0) {
-            overallScore -= issuesBySeverity.error * 10;
-            overallScore -= issuesBySeverity.warning * 5;
-            overallScore -= issuesBySeverity.info * 2;
-            overallScore -= issuesBySeverity.hint * 1;
+            // Deduct points based on canonical severity
+            overallScore -= issuesBySeverity.BLOCKER * 15;
+            overallScore -= issuesBySeverity.CRITICAL * 10;
+            overallScore -= issuesBySeverity.MAJOR * 5;
+            overallScore -= issuesBySeverity.MINOR * 2;
+            overallScore -= issuesBySeverity.INFO * 1;
             overallScore = Math.max(0, Math.min(100, overallScore));
         }
 
-        // Estimate technical debt in minutes
+        // Estimate technical debt in minutes based on canonical severity
         const technicalDebtMinutes =
-            issuesBySeverity.error * 60 +
-            issuesBySeverity.warning * 30 +
-            issuesBySeverity.info * 10 +
-            issuesBySeverity.hint * 5;
+            issuesBySeverity.BLOCKER * 120 +
+            issuesBySeverity.CRITICAL * 60 +
+            issuesBySeverity.MAJOR * 30 +
+            issuesBySeverity.MINOR * 10 +
+            issuesBySeverity.INFO * 5;
 
         return {
             overallScore,

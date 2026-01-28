@@ -9,9 +9,13 @@ export type {
     CodeSuggestion,
     CodeHealthMetrics,
     FileContext,
-    IssueSeverity,
+    Severity,
     IssueCategory,
-    CanonicalSeverity,
     WebviewToExtensionMessage,
     ExtensionToWebviewMessage,
 } from '../shared/protocol';
+
+// Legacy type aliases - DO NOT use in new code
+export type { OldSeverity } from '../shared/protocol';
+/** @deprecated Use Severity instead */
+export type { IssueSeverity, CanonicalSeverity } from '../shared/protocol';

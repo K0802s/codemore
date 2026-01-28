@@ -15,7 +15,7 @@
  * - Give AI better context about existing issues
  */
 
-import { DaemonConfig, CodeIssue, CodeSuggestion, FileContext, IssueSeverity } from '../../shared/protocol';
+import { DaemonConfig, CodeIssue, CodeSuggestion, FileContext, Severity } from '../../shared/protocol';
 import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
 import { StaticAnalyzer, StaticAnalyzerConfig } from './staticAnalyzer';
 import { ExternalToolRunner, ExternalToolsConfig } from './externalToolRunner';
@@ -33,7 +33,7 @@ interface HotSpot {
     startLine: number;
     endLine: number;
     reason: string;
-    severity: IssueSeverity;
+    severity: Severity;
     source: 'static' | 'external';
 }
 
@@ -239,11 +239,11 @@ export class AiService {
             const issueCount = lineIssueCount.get(line) || 0;
 
             // Mark as hotspot if:
-            // 1. High severity (error or warning)
+            // 1. High severity (BLOCKER, CRITICAL, or MAJOR)
             // 2. Multiple issues in same area
             // 3. Complexity-related issues
             // 4. Security issues from external tools (Semgrep, Checkov)
-            const isHighSeverity = issue.severity === 'error' || issue.severity === 'warning';
+            const isHighSeverity = issue.severity === 'BLOCKER' || issue.severity === 'CRITICAL' || issue.severity === 'MAJOR';
             const hasMultipleIssues = issueCount >= 2;
             const isComplexityIssue = issue.id.includes('cyclomatic') || 
                                        issue.id.includes('cognitive') || 
@@ -326,8 +326,8 @@ export class AiService {
         }
 
         // Sort by severity and line number
+        const severityOrder: Record<Severity, number> = { 'BLOCKER': 0, 'CRITICAL': 1, 'MAJOR': 2, 'MINOR': 3, 'INFO': 4 };
         return merged.sort((a, b) => {
-            const severityOrder = { error: 0, warning: 1, info: 2, hint: 3 };
             const severityDiff = severityOrder[a.severity] - severityOrder[b.severity];
             if (severityDiff !== 0) return severityDiff;
             return a.location.range.start.line - b.location.range.start.line;

@@ -21,7 +21,7 @@ import {
     CodeIssue,
     FileLocation,
     IssueCategory,
-    IssueSeverity,
+    Severity,
 } from '../../shared/protocol';
 
 const execAsync = promisify(exec);
@@ -417,7 +417,7 @@ export class ExternalToolRunner {
                     title: finding.check_id?.split('.').pop() || 'Security Issue',
                     description: finding.extra?.message || finding.message || 'Semgrep security finding',
                     category: this.semgrepCategoryToIssueCategory(finding.extra?.metadata?.category),
-                    severity: this.semgrepSeverityToIssueSeverity(finding.extra?.severity || finding.severity),
+                    severity: this.semgrepSeverityToSeverity(finding.extra?.severity || finding.severity),
                     location: {
                         filePath: originalFilePath,
                         range: {
@@ -449,13 +449,13 @@ export class ExternalToolRunner {
         return 'security';
     }
 
-    private semgrepSeverityToIssueSeverity(severity?: string): IssueSeverity {
-        if (!severity) return 'warning';
+    private semgrepSeverityToSeverity(severity?: string): Severity {
+        if (!severity) return 'MAJOR';
         const lower = severity.toLowerCase();
-        if (lower === 'error' || lower === 'high') return 'error';
-        if (lower === 'warning' || lower === 'medium') return 'warning';
-        if (lower === 'info' || lower === 'low') return 'info';
-        return 'hint';
+        if (lower === 'error' || lower === 'high') return 'CRITICAL';
+        if (lower === 'warning' || lower === 'medium') return 'MAJOR';
+        if (lower === 'info' || lower === 'low') return 'MINOR';
+        return 'INFO';
     }
 
     private semgrepConfidenceToNumber(confidence?: string): number {
@@ -514,7 +514,7 @@ export class ExternalToolRunner {
                     title: diag.category || 'Lint Issue',
                     description: diag.description || diag.message || 'Biome lint finding',
                     category: this.biomeCategoryToIssueCategory(diag.category),
-                    severity: this.biomeSeverityToIssueSeverity(diag.severity),
+                    severity: this.biomeSeverityToSeverity(diag.severity),
                     location: {
                         filePath: originalFilePath,
                         range: {
@@ -546,13 +546,13 @@ export class ExternalToolRunner {
         return 'code-smell';
     }
 
-    private biomeSeverityToIssueSeverity(severity?: string): IssueSeverity {
-        if (!severity) return 'warning';
+    private biomeSeverityToSeverity(severity?: string): Severity {
+        if (!severity) return 'MAJOR';
         const lower = severity.toLowerCase();
-        if (lower === 'error') return 'error';
-        if (lower === 'warning') return 'warning';
-        if (lower === 'information' || lower === 'info') return 'info';
-        return 'hint';
+        if (lower === 'error') return 'CRITICAL';
+        if (lower === 'warning') return 'MAJOR';
+        if (lower === 'information' || lower === 'info') return 'MINOR';
+        return 'INFO';
     }
 
     // ========================================================================
@@ -600,7 +600,7 @@ export class ExternalToolRunner {
                     title: `${diag.code}: ${diag.message?.split('\n')[0] || 'Python Issue'}`,
                     description: diag.message || `Ruff rule ${diag.code} violation`,
                     category: this.ruffCodeToIssueCategory(diag.code),
-                    severity: this.ruffCodeToIssueSeverity(diag.code),
+                    severity: this.ruffCodeToSeverity(diag.code),
                     location: {
                         filePath: originalFilePath,
                         range: {
@@ -642,15 +642,15 @@ export class ExternalToolRunner {
         }
     }
 
-    private ruffCodeToIssueSeverity(code?: string): IssueSeverity {
-        if (!code) return 'warning';
+    private ruffCodeToSeverity(code?: string): Severity {
+        if (!code) return 'MAJOR';
         const prefix = code.slice(0, 1).toUpperCase();
         
         // Security and bugs are more severe
-        if (prefix === 'S') return 'error'; // Security
-        if (prefix === 'F') return 'warning'; // Errors
-        if (prefix === 'B') return 'warning'; // Bugbear
-        return 'hint';
+        if (prefix === 'S') return 'CRITICAL'; // Security
+        if (prefix === 'F') return 'MAJOR'; // Errors
+        if (prefix === 'B') return 'MAJOR'; // Bugbear
+        return 'INFO';
     }
 
     private ruffCodeToImpact(code?: string): number {
@@ -709,7 +709,7 @@ export class ExternalToolRunner {
                     title: issue.rule || 'Terraform Issue',
                     description: issue.message || 'TFLint finding',
                     category: 'best-practice',
-                    severity: this.tflintSeverityToIssueSeverity(issue.severity),
+                    severity: this.tflintSeverityToSeverity(issue.severity),
                     location: {
                         filePath: originalFilePath,
                         range: {
@@ -730,13 +730,13 @@ export class ExternalToolRunner {
         return issues;
     }
 
-    private tflintSeverityToIssueSeverity(severity?: string): IssueSeverity {
-        if (!severity) return 'warning';
+    private tflintSeverityToSeverity(severity?: string): Severity {
+        if (!severity) return 'MAJOR';
         const lower = severity.toLowerCase();
-        if (lower === 'error') return 'error';
-        if (lower === 'warning') return 'warning';
-        if (lower === 'notice') return 'info';
-        return 'hint';
+        if (lower === 'error') return 'CRITICAL';
+        if (lower === 'warning') return 'MAJOR';
+        if (lower === 'notice') return 'MINOR';
+        return 'INFO';
     }
 
     // ========================================================================
@@ -784,7 +784,7 @@ export class ExternalToolRunner {
                     title: `${check.check_id}: ${check.check_name || 'IaC Issue'}`,
                     description: check.guideline || check.check_name || 'Checkov security finding',
                     category: 'security',
-                    severity: this.checkovSeverityToIssueSeverity(check.severity),
+                    severity: this.checkovSeverityToSeverity(check.severity),
                     location: {
                         filePath: originalFilePath,
                         range: {
@@ -805,13 +805,14 @@ export class ExternalToolRunner {
         return issues;
     }
 
-    private checkovSeverityToIssueSeverity(severity?: string): IssueSeverity {
-        if (!severity) return 'warning';
+    private checkovSeverityToSeverity(severity?: string): Severity {
+        if (!severity) return 'MAJOR';
         const upper = severity.toUpperCase();
-        if (upper === 'CRITICAL' || upper === 'HIGH') return 'error';
-        if (upper === 'MEDIUM') return 'warning';
-        if (upper === 'LOW') return 'info';
-        return 'hint';
+        if (upper === 'CRITICAL') return 'BLOCKER';
+        if (upper === 'HIGH') return 'CRITICAL';
+        if (upper === 'MEDIUM') return 'MAJOR';
+        if (upper === 'LOW') return 'MINOR';
+        return 'INFO';
     }
 
     // ========================================================================

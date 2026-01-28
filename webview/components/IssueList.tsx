@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useMemo } from 'react';
-import { CodeIssue, IssueSeverity, IssueCategory, CanonicalSeverity } from '../types';
+import { CodeIssue, Severity, IssueCategory } from '../types';
 import {
     Search,
     X,
@@ -42,45 +42,35 @@ const IssueList: React.FC<IssueListProps> = ({
     onExportIssues,
 }) => {
     const [searchQuery, setSearchQuery] = useState('');
-    const [selectedSeverities, setSelectedSeverities] = useState<Set<IssueSeverity>>(new Set());
+    const [selectedSeverities, setSelectedSeverities] = useState<Set<Severity>>(new Set());
     const [selectedCategories, setSelectedCategories] = useState<Set<IssueCategory>>(new Set());
     const [sortBy, setSortBy] = useState<SortBy>('severity');
     const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
     const [showFilters, setShowFilters] = useState(false);
 
-    const severities: IssueSeverity[] = ['error', 'warning', 'info', 'hint'];
-    const canonicalSeverities: CanonicalSeverity[] = ['BLOCKER', 'CRITICAL', 'MAJOR', 'MINOR', 'INFO'];
+    // Canonical severity levels used everywhere
+    const severities: Severity[] = ['BLOCKER', 'CRITICAL', 'MAJOR', 'MINOR', 'INFO'];
     const categories: IssueCategory[] = [
         'bug', 'code-smell', 'performance', 'security', 'maintainability', 'accessibility', 'best-practice'
     ];
 
-    const getSeverityColor = (severity: IssueSeverity, canonicalSeverity?: CanonicalSeverity): string => {
-        // Use canonical severity for better color coding if available
-        if (canonicalSeverity) {
-            switch (canonicalSeverity) {
-                case 'BLOCKER': return '#d32f2f'; // Dark red
-                case 'CRITICAL': return '#f44336'; // Red
-                case 'MAJOR': return '#ff9800'; // Orange
-                case 'MINOR': return '#2196f3'; // Blue
-                case 'INFO': return '#9e9e9e'; // Gray
-            }
-        }
-        
-        // Fallback to standard severity colors
+    const getSeverityColor = (severity: Severity): string => {
         switch (severity) {
-            case 'error': return 'var(--color-error)';
-            case 'warning': return 'var(--color-warning)';
-            case 'info': return 'var(--color-info)';
-            case 'hint': return 'var(--color-hint)';
+            case 'BLOCKER': return '#d32f2f'; // Dark red
+            case 'CRITICAL': return '#f44336'; // Red
+            case 'MAJOR': return '#ff9800'; // Orange
+            case 'MINOR': return '#2196f3'; // Blue
+            case 'INFO': return '#9e9e9e'; // Gray
         }
     };
 
-    const getSeverityOrder = (severity: IssueSeverity): number => {
+    const getSeverityOrder = (severity: Severity): number => {
         switch (severity) {
-            case 'error': return 0;
-            case 'warning': return 1;
-            case 'info': return 2;
-            case 'hint': return 3;
+            case 'BLOCKER': return 0;
+            case 'CRITICAL': return 1;
+            case 'MAJOR': return 2;
+            case 'MINOR': return 3;
+            case 'INFO': return 4;
         }
     };
 
@@ -123,20 +113,9 @@ const IssueList: React.FC<IssueListProps> = ({
             );
         }
 
-        // Filter by severity (check both standard and canonical)
+        // Filter by severity (canonical severity only)
         if (selectedSeverities.size > 0) {
-            result = result.filter((issue) => {
-                const selectedArray = Array.from(selectedSeverities);
-                // Check standard severity
-                if (selectedArray.includes(issue.severity)) {
-                    return true;
-                }
-                // Check canonical severity
-                if (issue.canonicalSeverity && selectedArray.includes(issue.canonicalSeverity as any)) {
-                    return true;
-                }
-                return false;
-            });
+            result = result.filter((issue) => selectedSeverities.has(issue.severity));
         }
 
         // Filter by category
@@ -167,7 +146,7 @@ const IssueList: React.FC<IssueListProps> = ({
         return result;
     }, [issues, searchQuery, selectedSeverities, selectedCategories, sortBy, sortOrder]);
 
-    const toggleSeverity = (severity: IssueSeverity) => {
+    const toggleSeverity = (severity: Severity) => {
         const newSet = new Set(selectedSeverities);
         if (newSet.has(severity)) {
             newSet.delete(severity);
@@ -263,28 +242,7 @@ const IssueList: React.FC<IssueListProps> = ({
             {showFilters && (
                 <div className="filter-panel">
                     <div className="filter-section">
-                        <span className="filter-label">Canonical Severity:</span>
-                        <div className="filter-options">
-                            {canonicalSeverities.map((severity) => (
-                                <button
-                                    key={severity}
-                                    className={`filter-chip canonical ${selectedSeverities.has(severity as any) ? 'active' : ''}`}
-                                    style={{
-                                        borderColor: getSeverityColor('error', severity),
-                                        backgroundColor: selectedSeverities.has(severity as any)
-                                            ? getSeverityColor('error', severity)
-                                            : 'transparent',
-                                    }}
-                                    onClick={() => toggleSeverity(severity as any)}
-                                >
-                                    {severity}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div className="filter-section">
-                        <span className="filter-label">Standard Severity:</span>
+                        <span className="filter-label">Severity:</span>
                         <div className="filter-options">
                             {severities.map((severity) => (
                                 <button
@@ -351,10 +309,9 @@ const IssueList: React.FC<IssueListProps> = ({
                             <div className="issue-header">
                                 <span
                                     className="severity-badge"
-                                    style={{ backgroundColor: getSeverityColor(issue.severity, issue.canonicalSeverity) }}
-                                    title={issue.canonicalSeverity ? `Canonical: ${issue.canonicalSeverity}` : undefined}
+                                    style={{ backgroundColor: getSeverityColor(issue.severity) }}
                                 >
-                                    {issue.canonicalSeverity || issue.severity}
+                                    {issue.severity}
                                 </span>
                                 <span className="category-badge">
                                     {getCategoryIcon(issue.category)} {issue.category.replace('-', ' ')}
