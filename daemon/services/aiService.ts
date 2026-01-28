@@ -3,23 +3,37 @@
  * 
  * Handles communication with LLM APIs for code analysis.
  * Supports multiple providers (OpenAI, Anthropic, Gemini, local).
+ * Falls back to advanced static analysis when AI is not available.
  */
 
-import { DaemonConfig, CodeIssue, CodeSuggestion, FileContext, IssueCategory, IssueSeverity } from '../../shared/protocol';
+import { DaemonConfig, CodeIssue, CodeSuggestion, FileContext, IssueSeverity } from '../../shared/protocol';
 import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
+import { StaticAnalyzer, StaticAnalyzerConfig } from './staticAnalyzer';
 
 interface CacheEntry {
     response: string;
     timestamp: number;
 }
 
+/**
+ * Represents a "hot spot" - a code region that warrants deeper AI analysis
+ */
+interface HotSpot {
+    startLine: number;
+    endLine: number;
+    reason: string;
+    severity: IssueSeverity;
+}
+
 export class AiService {
     private cache = new Map<string, CacheEntry>();
     private config: DaemonConfig;
     private geminiModel: GenerativeModel | null = null;
+    private staticAnalyzer: StaticAnalyzer;
 
     constructor(config: DaemonConfig) {
         this.config = config;
+        this.staticAnalyzer = new StaticAnalyzer();
         this.initGemini();
     }
 
@@ -58,35 +72,150 @@ export class AiService {
 
     /**
      * Analyze code and generate issues
+     * Uses a hybrid approach: static analysis always runs, AI enhances when available
      */
     async analyzeCode(
         filePath: string,
         content: string,
         context: FileContext
     ): Promise<CodeIssue[]> {
-        // If no API key, use static analysis only
+        // Always run static analysis first - it's fast and comprehensive
+        const staticIssues = this.performStaticAnalysis(filePath, content, context);
+
+        // If no API key, return static analysis only
         if (!this.config.apiKey) {
-            return this.performStaticAnalysis(filePath, content, context);
+            console.log(`[AiService] No API key configured, returning ${staticIssues.length} static analysis issues`);
+            return staticIssues;
         }
 
-        // Check cache
+        // Check cache for AI results
         const cacheKey = this.getCacheKey(filePath, content);
         const cached = this.getFromCache(cacheKey);
         if (cached) {
-            return JSON.parse(cached);
+            // Merge cached AI issues with static issues
+            const aiIssues = JSON.parse(cached) as CodeIssue[];
+            return this.mergeIssues(staticIssues, aiIssues);
         }
 
+        // Use static analysis to identify "hot spots" for AI focus
+        // This saves API costs by only sending complex/problematic areas
+        const hotSpots = this.identifyHotSpots(staticIssues);
+        
         try {
-            const issues = await this.callAiApi(filePath, content, context);
+            const aiIssues = await this.callAiApi(filePath, content, context, hotSpots);
 
-            // Cache the result
-            this.setCache(cacheKey, JSON.stringify(issues));
+            // Cache the AI result
+            this.setCache(cacheKey, JSON.stringify(aiIssues));
 
-            return issues;
+            // Merge static and AI issues, deduplicating similar findings
+            return this.mergeIssues(staticIssues, aiIssues);
         } catch (error) {
-            console.error('[AiService] API call failed, falling back to static analysis:', error);
-            return this.performStaticAnalysis(filePath, content, context);
+            console.error('[AiService] API call failed, returning static analysis only:', error);
+            // Static analysis already ran, just return those issues
+            return staticIssues;
         }
+    }
+
+    /**
+     * Identify "hot spots" - complex or problematic areas that AI should focus on
+     * This enables cost-effective AI usage by targeting problem areas
+     */
+    private identifyHotSpots(issues: CodeIssue[]): HotSpot[] {
+        const hotSpots: HotSpot[] = [];
+        const lineIssueCount = new Map<number, number>();
+
+        // Count issues per line/region
+        for (const issue of issues) {
+            const line = issue.location.range.start.line;
+            lineIssueCount.set(line, (lineIssueCount.get(line) || 0) + 1);
+        }
+
+        // Identify areas with multiple issues or high-severity issues
+        for (const issue of issues) {
+            const line = issue.location.range.start.line;
+            const issueCount = lineIssueCount.get(line) || 0;
+
+            // Mark as hotspot if:
+            // 1. High severity (error or warning)
+            // 2. Multiple issues in same area
+            // 3. Complexity-related issues
+            const isHighSeverity = issue.severity === 'error' || issue.severity === 'warning';
+            const hasMultipleIssues = issueCount >= 2;
+            const isComplexityIssue = issue.id.includes('cyclomatic') || 
+                                       issue.id.includes('cognitive') || 
+                                       issue.id.includes('nesting');
+
+            if (isHighSeverity || hasMultipleIssues || isComplexityIssue) {
+                hotSpots.push({
+                    startLine: issue.location.range.start.line,
+                    endLine: issue.location.range.end.line,
+                    reason: issue.title,
+                    severity: issue.severity,
+                });
+            }
+        }
+
+        // Deduplicate overlapping hotspots
+        return this.deduplicateHotSpots(hotSpots);
+    }
+
+    /**
+     * Deduplicate overlapping hot spots
+     */
+    private deduplicateHotSpots(hotSpots: HotSpot[]): HotSpot[] {
+        if (hotSpots.length === 0) return [];
+
+        // Sort by start line
+        const sorted = [...hotSpots].sort((a, b) => a.startLine - b.startLine);
+        const result: HotSpot[] = [sorted[0]];
+
+        for (let i = 1; i < sorted.length; i++) {
+            const current = sorted[i];
+            const last = result[result.length - 1];
+
+            // If overlapping or adjacent, merge
+            if (current.startLine <= last.endLine + 5) {
+                last.endLine = Math.max(last.endLine, current.endLine);
+                last.reason = `${last.reason}; ${current.reason}`;
+            } else {
+                result.push(current);
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Merge static and AI issues, removing duplicates
+     */
+    private mergeIssues(staticIssues: CodeIssue[], aiIssues: CodeIssue[]): CodeIssue[] {
+        const merged: CodeIssue[] = [...staticIssues];
+        const existingLocations = new Set(
+            staticIssues.map(i => `${i.location.range.start.line}:${i.category}:${i.title.toLowerCase().slice(0, 20)}`)
+        );
+
+        for (const aiIssue of aiIssues) {
+            // Generate a key for deduplication
+            const key = `${aiIssue.location.range.start.line}:${aiIssue.category}:${aiIssue.title.toLowerCase().slice(0, 20)}`;
+            
+            // Only add if not a duplicate
+            if (!existingLocations.has(key)) {
+                // Mark AI issues for UI differentiation
+                merged.push({
+                    ...aiIssue,
+                    id: `ai-${aiIssue.id}`, // Prefix to indicate AI-generated
+                });
+                existingLocations.add(key);
+            }
+        }
+
+        // Sort by severity and line number
+        return merged.sort((a, b) => {
+            const severityOrder = { error: 0, warning: 1, info: 2, hint: 3 };
+            const severityDiff = severityOrder[a.severity] - severityOrder[b.severity];
+            if (severityDiff !== 0) return severityDiff;
+            return a.location.range.start.line - b.location.range.start.line;
+        });
     }
 
     /**
@@ -122,9 +251,10 @@ export class AiService {
     private async callAiApi(
         filePath: string,
         content: string,
-        context: FileContext
+        context: FileContext,
+        hotSpots: HotSpot[] = []
     ): Promise<CodeIssue[]> {
-        const prompt = this.buildPrompt(filePath, content, context);
+        const prompt = this.buildPrompt(filePath, content, context, hotSpots);
 
         switch (this.config.aiProvider) {
             case 'openai':
@@ -136,7 +266,7 @@ export class AiService {
             case 'local':
                 return await this.callLocal(prompt);
             default:
-                return this.performStaticAnalysis(filePath, content, context);
+                return [];
         }
     }
 
@@ -343,11 +473,29 @@ Return ONLY a valid JSON array, no additional text or markdown.`;
     /**
      * Build analysis prompt
      */
-    private buildPrompt(filePath: string, content: string, context: FileContext): string {
+    private buildPrompt(
+        filePath: string, 
+        content: string, 
+        context: FileContext,
+        hotSpots: HotSpot[] = []
+    ): string {
+        // Build hotspot guidance for the AI
+        let hotSpotSection = '';
+        if (hotSpots.length > 0) {
+            const hotSpotDetails = hotSpots.map(hs => 
+                `  - Lines ${hs.startLine}-${hs.endLine}: ${hs.reason} (${hs.severity})`
+            ).join('\n');
+            hotSpotSection = `
+PRIORITY AREAS (focus analysis here):
+${hotSpotDetails}
+
+`;
+        }
+
         return `Analyze this ${context.language} code for issues. Return a JSON array of issues.
 
 File: ${filePath}
-
+${hotSpotSection}
 Code:
 \`\`\`${context.language}
 ${content.slice(0, 5000)} ${content.length > 5000 ? '\n... (truncated)' : ''}
@@ -358,12 +506,20 @@ Context:
 - Imports: ${context.imports.map(i => i.module).join(', ')}
 - Dependencies: ${context.dependencies.join(', ')}
 
+Focus on finding issues that static analysis cannot detect:
+- Logic errors and edge cases
+- API misuse patterns
+- Race conditions
+- Memory leaks
+- Incorrect algorithm implementations
+- Missing error handling in complex scenarios
+
 Return issues in this JSON format:
 [
   {
     "id": "unique-id",
     "title": "Issue title",
-    "description": "Detailed description",
+    "description": "Detailed description with WHY this matters and potential consequences",
     "category": "bug|code-smell|performance|security|maintainability|best-practice",
     "severity": "error|warning|info|hint",
     "location": {
@@ -378,175 +534,25 @@ Return issues in this JSON format:
     }
 
     /**
-     * Perform static analysis (fallback when no API key)
+     * Perform advanced static analysis (fallback when no API key)
+     * Uses the comprehensive StaticAnalyzer for deep code analysis
      */
     private performStaticAnalysis(
         filePath: string,
         content: string,
         context: FileContext
     ): CodeIssue[] {
-        const issues: CodeIssue[] = [];
-        const lines = content.split('\n');
-        let issueId = 0;
-
-        // Check for common issues
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
-            const lineNumber = i;
-
-            // TODO comments
-            if (/\/\/\s*TODO/i.test(line)) {
-                issues.push(this.createIssue(
-                    `todo-${issueId++}`,
-                    'TODO comment found',
-                    'Consider addressing this TODO item or creating a tracked issue.',
-                    'maintainability',
-                    'info',
-                    filePath,
-                    lineNumber,
-                    line.trim()
-                ));
-            }
-
-            // Console.log statements
-            if (/console\.(log|debug|info)\s*\(/.test(line)) {
-                issues.push(this.createIssue(
-                    `console-${issueId++}`,
-                    'Console statement found',
-                    'Consider removing console statements before production.',
-                    'best-practice',
-                    'warning',
-                    filePath,
-                    lineNumber,
-                    line.trim()
-                ));
-            }
-
-            // Magic numbers
-            if (/[^a-zA-Z0-9_](\d{2,})[^a-zA-Z0-9_]/.test(line) && !/const|let|var|import|export/.test(line)) {
-                const match = line.match(/[^a-zA-Z0-9_](\d{2,})[^a-zA-Z0-9_]/);
-                if (match && parseInt(match[1]) > 10) {
-                    issues.push(this.createIssue(
-                        `magic-${issueId++}`,
-                        'Magic number detected',
-                        'Consider extracting magic numbers into named constants.',
-                        'maintainability',
-                        'hint',
-                        filePath,
-                        lineNumber,
-                        line.trim()
-                    ));
-                }
-            }
-
-            // Long lines
-            if (line.length > 120) {
-                issues.push(this.createIssue(
-                    `long-line-${issueId++}`,
-                    'Line too long',
-                    'Lines should not exceed 120 characters for readability.',
-                    'code-smell',
-                    'hint',
-                    filePath,
-                    lineNumber,
-                    `${line.slice(0, 50)}...`
-                ));
-            }
-
-            // Empty catch blocks
-            if (/catch\s*\([^)]*\)\s*\{\s*\}/.test(line)) {
-                issues.push(this.createIssue(
-                    `empty-catch-${issueId++}`,
-                    'Empty catch block',
-                    'Empty catch blocks may hide errors. Add error handling or logging.',
-                    'bug',
-                    'warning',
-                    filePath,
-                    lineNumber,
-                    line.trim()
-                ));
-            }
-
-            // == instead of ===
-            if (/[^=!]==[^=]/.test(line)) {
-                issues.push(this.createIssue(
-                    `equality-${issueId++}`,
-                    'Use strict equality',
-                    'Use === instead of == for type-safe comparisons.',
-                    'best-practice',
-                    'warning',
-                    filePath,
-                    lineNumber,
-                    line.trim()
-                ));
-            }
-        }
-
-        // Check for large functions
-        for (const symbol of context.symbols) {
-            if (symbol.kind === 'function') {
-                const functionLength = symbol.range.end.line - symbol.range.start.line;
-                if (functionLength > 50) {
-                    issues.push(this.createIssue(
-                        `long-function-${issueId++}`,
-                        `Function '${symbol.name}' is too long`,
-                        `This function has ${functionLength} lines. Consider breaking it into smaller functions.`,
-                        'maintainability',
-                        'warning',
-                        filePath,
-                        symbol.range.start.line,
-                        symbol.name
-                    ));
-                }
-            }
-        }
-
-        return issues;
+        console.log(`[AiService] Performing advanced static analysis on: ${filePath}`);
+        
+        // Use the comprehensive static analyzer
+        return this.staticAnalyzer.analyze(filePath, content, context);
     }
 
     /**
-     * Create an issue object
+     * Update static analyzer configuration
      */
-    private createIssue(
-        id: string,
-        title: string,
-        description: string,
-        category: IssueCategory,
-        severity: IssueSeverity,
-        filePath: string,
-        line: number,
-        codeSnippet: string
-    ): CodeIssue {
-        return {
-            id,
-            title,
-            description,
-            category,
-            severity,
-            location: {
-                filePath,
-                range: {
-                    start: { line, column: 0 },
-                    end: { line, column: codeSnippet.length },
-                },
-            },
-            codeSnippet,
-            confidence: 80,
-            impact: this.getImpactForSeverity(severity),
-            createdAt: Date.now(),
-        };
-    }
-
-    /**
-     * Get impact score based on severity
-     */
-    private getImpactForSeverity(severity: IssueSeverity): number {
-        switch (severity) {
-            case 'error': return 90;
-            case 'warning': return 60;
-            case 'info': return 40;
-            case 'hint': return 20;
-        }
+    updateStaticAnalyzerConfig(config: Partial<StaticAnalyzerConfig>): void {
+        this.staticAnalyzer.updateConfig(config);
     }
 
     /**
