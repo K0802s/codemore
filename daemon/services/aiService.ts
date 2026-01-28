@@ -135,20 +135,26 @@ export class AiService {
         let staticIssueCount = 0;
         let aiIssueCount = 0;
 
-        // Step 1: Run external tools in parallel with built-in static analysis
-        // This maximizes performance by utilizing external tool parallelism
-        const [externalIssues, staticIssues] = await Promise.all([
-            this.runExternalTools(filePath, content),
-            Promise.resolve(this.performStaticAnalysis(filePath, content, context)),
-        ]);
+        const analysisMode = this.config.analysisTools || 'both';
 
-        externalIssueCount = externalIssues.length;
-        staticIssueCount = staticIssues.length;
+        // Step 1: Run external tools and/or built-in static analysis based on settings
+        let externalIssues: CodeIssue[] = [];
+        let staticIssues: CodeIssue[] = [];
+
+        if (analysisMode === 'both' || analysisMode === 'external') {
+            externalIssues = await this.runExternalTools(filePath, content);
+            externalIssueCount = externalIssues.length;
+        }
+
+        if (analysisMode === 'both' || analysisMode === 'internal') {
+            staticIssues = this.performStaticAnalysis(filePath, content, context);
+            staticIssueCount = staticIssues.length;
+        }
 
         // Step 2: Merge external and static issues, deduplicating
         const combinedIssues = this.mergeIssues(externalIssues, staticIssues);
 
-        console.log(`[AiService] External tools: ${externalIssueCount} issues, Static analysis: ${staticIssueCount} issues`);
+        console.log(`[AiService] External tools: ${externalIssueCount} issues, Static analysis: ${staticIssueCount} issues (mode: ${analysisMode})`);
 
         // If no API key, return combined analysis
         if (!this.config.apiKey) {

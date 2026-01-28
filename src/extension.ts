@@ -521,6 +521,7 @@ function getConfiguration(): DaemonConfig {
         maxConcurrentAnalysis: DEFAULT_CONFIG.maxConcurrentAnalysis,
         cacheEnabled: DEFAULT_CONFIG.cacheEnabled,
         cacheTTLMinutes: DEFAULT_CONFIG.cacheTTLMinutes,
+        analysisTools: config.get('analysisTools', DEFAULT_CONFIG.analysisTools),
     };
 }
 

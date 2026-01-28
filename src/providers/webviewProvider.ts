@@ -246,6 +246,51 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
             case 'openSettings':
                 await vscode.commands.executeCommand('workbench.action.openSettings', 'codemore');
                 break;
+
+            case 'exportIssues':
+                try {
+                    const exportData = {
+                        exportDate: new Date().toISOString(),
+                        totalIssues: message.issues.length,
+                        issues: message.issues.map(issue => ({
+                            id: issue.id,
+                            title: issue.title,
+                            description: issue.description,
+                            category: issue.category,
+                            severity: issue.severity,
+                            location: {
+                                filePath: issue.location.filePath,
+                                startLine: issue.location.range.start.line,
+                                startColumn: issue.location.range.start.column,
+                                endLine: issue.location.range.end.line,
+                                endColumn: issue.location.range.end.column,
+                            },
+                            codeSnippet: issue.codeSnippet,
+                            confidence: issue.confidence,
+                            impact: issue.impact,
+                            createdAt: new Date(issue.createdAt).toISOString(),
+                        }))
+                    };
+
+                    const dataStr = JSON.stringify(exportData, null, 2);
+                    const defaultFileName = `codemore-issues-${new Date().toISOString().split('T')[0]}.json`;
+                    
+                    const uri = await vscode.window.showSaveDialog({
+                        defaultUri: vscode.Uri.file(defaultFileName),
+                        filters: {
+                            'JSON': ['json'],
+                            'All Files': ['*']
+                        }
+                    });
+
+                    if (uri) {
+                        await vscode.workspace.fs.writeFile(uri, Buffer.from(dataStr, 'utf8'));
+                        vscode.window.showInformationMessage(`Exported ${message.issues.length} issues to ${uri.fsPath}`);
+                    }
+                } catch (error) {
+                    this.postMessage({ type: 'error', message: `Failed to export issues: ${error}` });
+                }
+                break;
         }
     }
 

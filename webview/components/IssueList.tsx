@@ -20,6 +20,7 @@ import {
     FileText,
     Target,
     Zap,
+    Download,
 } from 'lucide-react';
 
 interface IssueListProps {
@@ -27,6 +28,7 @@ interface IssueListProps {
     selectedIssue: CodeIssue | null;
     onSelectIssue: (issue: CodeIssue) => void;
     onOpenFile: (filePath: string, line?: number) => void;
+    onExportIssues: (issues: CodeIssue[]) => void;
 }
 
 type SortBy = 'severity' | 'category' | 'file' | 'date';
@@ -37,6 +39,7 @@ const IssueList: React.FC<IssueListProps> = ({
     selectedIssue,
     onSelectIssue,
     onOpenFile,
+    onExportIssues,
 }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedSeverities, setSelectedSeverities] = useState<Set<IssueSeverity>>(new Set());
@@ -138,7 +141,7 @@ const IssueList: React.FC<IssueListProps> = ({
         });
 
         return result;
-    }, [issues, searchQuery, selectedSeverities, selectedCategories, sortBy, sortOrder, selectedSeverities.size, selectedCategories.size]);
+    }, [issues, searchQuery, selectedSeverities, selectedCategories, sortBy, sortOrder]);
 
     const toggleSeverity = (severity: IssueSeverity) => {
         const newSet = new Set(selectedSeverities);
@@ -166,6 +169,11 @@ const IssueList: React.FC<IssueListProps> = ({
         setSelectedCategories(new Set());
     };
 
+    const exportIssues = () => {
+        // Use VS Code API to handle export
+        onExportIssues(filteredIssues);
+    };
+
     const hasActiveFilters = searchQuery || selectedSeverities.size > 0 || selectedCategories.size > 0;
 
     return (
@@ -189,6 +197,15 @@ const IssueList: React.FC<IssueListProps> = ({
                 </div>
 
                 <div className="filter-controls">
+                    <button
+                        className="export-button"
+                        onClick={exportIssues}
+                        disabled={filteredIssues.length === 0}
+                        title="Export issues to JSON"
+                    >
+                        <Download size={14} /> Export
+                    </button>
+                    
                     <button
                         className={`filter-toggle ${showFilters ? 'active' : ''}`}
                         onClick={() => setShowFilters(!showFilters)}

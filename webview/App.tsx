@@ -24,6 +24,8 @@ import {
     Lightbulb,
     AlertTriangle,
     StopCircle,
+    X,
+    Folder,
 } from 'lucide-react';
 
 // VS Code API interface
@@ -83,6 +85,8 @@ const App: React.FC = () => {
                 break;
             case 'analysisComplete':
                 setAnalysisProgress(null);
+                // Refresh dashboard to show updated metrics
+                vscode.postMessage({ type: 'refreshDashboard' });
                 break;
             case 'analysisStopped':
                 setAnalysisProgress(null);
@@ -153,6 +157,11 @@ const App: React.FC = () => {
         vscode.postMessage({ type: 'openSettings' });
     };
 
+    // Handle export issues
+    const handleExportIssues = (issues: CodeIssue[]) => {
+        vscode.postMessage({ type: 'exportIssues', issues });
+    };
+
     return (
         <div className={`app ${isDark ? 'dark' : 'light'}`}>
             {/* Header */}
@@ -190,7 +199,7 @@ const App: React.FC = () => {
             {error && (
                 <div className="error-banner">
                     <span><AlertTriangle size={14} /> {error}</span>
-                    <button onClick={() => setError(null)}>✕</button>
+                    <button onClick={() => setError(null)}><X size={14} /></button>
                 </div>
             )}
 
@@ -198,7 +207,7 @@ const App: React.FC = () => {
             {fileDiscovery && !analysisProgress && (
                 <div className="file-discovery-banner">
                     <div className="discovery-header">
-                        <span className="discovery-icon">📁</span>
+                        <span className="discovery-icon"><Search size={16} /></span>
                         <span className="discovery-title">Discovered {fileDiscovery.totalFiles.toLocaleString()} files</span>
                     </div>
                     <div className="file-type-chips">
@@ -224,7 +233,7 @@ const App: React.FC = () => {
                 <div className="progress-bar-container">
                     <div className="progress-info">
                         <span className="progress-file">
-                            <span className="progress-icon">⚡</span>
+                            <span className="progress-icon"><Zap size={14} /></span>
                             Analyzing: {analysisProgress.currentFile?.split(/[/\\]/).pop() || '...'}
                         </span>
                         <span className="progress-count">
@@ -306,6 +315,7 @@ const App: React.FC = () => {
                                 selectedIssue={selectedIssue}
                                 onSelectIssue={handleSelectIssue}
                                 onOpenFile={handleOpenFile}
+                                onExportIssues={handleExportIssues}
                             />
                         )}
 

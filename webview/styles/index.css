@@ -630,6 +630,29 @@ body {
   gap: 8px;
 }
 
+.export-button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  background: var(--vscode-button-secondaryBackground);
+  border: none;
+  border-radius: var(--border-radius);
+  color: var(--vscode-button-secondaryForeground);
+  cursor: pointer;
+  font-size: 13px;
+  transition: all var(--transition-fast);
+}
+
+.export-button:hover:not(:disabled) {
+  background: var(--vscode-button-secondaryHoverBackground);
+}
+
+.export-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .filter-toggle {
   display: flex;
   align-items: center;

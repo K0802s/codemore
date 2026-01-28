@@ -1,112 +1,177 @@
-To make your "Codemore" extension a professional-grade tool, the best approach is to bundle high-performance, industry-standard engines that provide instant feedback, while saving your AI for the "hard" logical reasoning.
-
-## ✅ IMPLEMENTED - External Tool Integration
-
-The following external tool integrations have been implemented in `daemon/services/externalToolRunner.ts`:
-
-### The "Essential Trio" (Multi-Language Core)
-
-1. **Semgrep (Security Engine)** ✅
-   - Industry standard SAST scanning
-   - Supports 30+ languages
-   - JSON output parsing
-   - Automatic community rules
-
-2. **Biome (Web/React Native Engine)** ✅
-   - Ultra-fast JS/TS/JSON linting
-   - 100x faster than ESLint
-   - JSON reporter integration
-
-3. **Ruff (Python Engine)** ✅
-   - Lightning-fast Python linting
-   - Replaces Flake8, isort, etc.
-   - Full rule category mapping
-
-### DevOps/Infrastructure Layer ✅
-
-1. **TFLint** - Terraform linting
-2. **Checkov** - IaC security scanning (Terraform, CloudFormation, K8s, Docker)
-
-### Built-in Static Analysis Enhancements ✅
-
-Extended `daemon/services/staticAnalyzer.ts` with:
-
-- **SQL Analysis**: SELECT *, missing WHERE, SQL injection, JOINs
-- **JSON Analysis**: Parse errors, trailing commas
-- **YAML Analysis**: Tabs, indentation, boolean values
-- **Shell Script Analysis**: Unquoted variables, useless cat, eval, shebang
-- **Dockerfile Analysis**: :latest tag, apt-get -y, COPY ., root user
-- **Markdown Analysis**: Broken anchor links
-
-### Architecture
-
-```
-AiService.analyzeCode()
-    ├── External Tools (parallel) ──→ Semgrep, Biome, Ruff, TFLint, Checkov
-    ├── Built-in Static Analysis ──→ TypeScript AST + Language-specific patterns
-    └── AI Analysis (optional) ────→ Focused on "hot spots" from above
-```
-
-- External tool results provide context to AI for smarter analysis
-- Hot spots identified by tools guide AI to focus on problem areas
-- All issues are deduplicated and merged
-
-### Binary Bundling ✅
-
-Pre-compiled binaries are automatically bundled with the extension:
-
-- **Zero Install**: Users get all tools without manual installation
-- **Cross-Platform**: Binaries for macOS (ARM64/x64), Linux (x64), Windows (x64)
-- **Auto-Download**: `scripts/download-binaries.js` downloads from official GitHub releases
-- **Smart Fallback**: Uses bundled binaries → system PATH → built-in analysis
-
-```bash
-# Download binaries before packaging
-npm run download-binaries
-
-# Package with binaries included
-npm run vsce:package
-```
-
-See [BINARY_SETUP.md](BINARY_SETUP.md) for details.
+# Severity Re-Mapping Specification for Static Analysis Issues  
+**Target Model:** Claude Sonnet 4.5  
+**Goal:** Re-map raw static-analysis findings into developer-meaningful severities that reduce noise, increase trust, and surface real engineering risk.
 
 ---
 
-## Original Improvement Notes
+## 🎯 Objective
 
-The "Essential Trio" (Multi-Language Core)
-These three tools alone will cover 90% of your users' needs with near-instant performance.
+Transform a noisy list of lint, AI, and static-analysis issues into a **high-signal, developer-centric severity system** that:
 
-Semgrep (The Security Engine):
+- Highlights production risks, data loss, and architectural debt
+- De-emphasizes stylistic and auto-fixable findings
+- Prevents alert fatigue
+- Aligns with how senior developers actually prioritize work
 
-Why: It is the industry standard for lightweight SAST (Static Application Security Testing). It uses a "grep-like" syntax to find complex security flaws (like SQL injection or hardcoded secrets) across 30+ languages.
+You must **re-map severities**, not rewrite issues.
 
-Bundle Value: It gives your software "Security Professional" capabilities out of the box.
+---
 
-Biome (The Web/React Native Engine):
+## 🧱 Canonical Severity Levels (5)
 
-Why: Built in Rust, Biome is the "Ruff of the web." It replaces ESLint and Prettier for JavaScript, TypeScript, and JSON. It is up to 100x faster than ESLint.
+Use **exactly** these five severities:
 
-Bundle Value: Perfect for your React Native projects where build times and IDE lag are common pain points.
+| Severity | Definition | Expected Developer Action |
+|--------|------------|---------------------------|
+| **BLOCKER** | Causes data loss, security breach, or production outage | Fix immediately, fail CI |
+| **CRITICAL** | High-probability runtime bugs or severe maintainability risk | Fix in same PR / sprint |
+| **MAJOR** | Legit technical debt or correctness risk | Schedule |
+| **MINOR** | Low-risk improvement | Fix opportunistically |
+| **INFO** | Style / preference / auto-fixable | Ignore by default |
 
-Ruff (The Python Engine):
+---
 
-Why: An extremely fast Python linter and formatter (also in Rust). It replaces Flake8, isort, and dozens of other tools.
+## 🔥 Rule-by-Rule Severity Re-Mapping
 
-Bundle Value: Essential for your Python/ML workflows. It makes Python feel as "snappy" as a compiled language.
+### 1️⃣ SQL & Data-Safety Rules (Highest Priority)
 
-The DevOps/Infrastructure Layer: Checkov or TFLint
-To truly be "universal," you should support the files that run the code.
+| Rule ID Pattern | New Severity |
+|-----------------|--------------|
+| `ai-sql-delete-no-where-*` | **BLOCKER** |
+| `ai-sql-update-no-where-*` | **BLOCKER** |
 
-Coverage: Terraform, CloudFormation, Kubernetes, Docker, and ARM Templates.
+**Rationale:**  
+Statements that modify or delete without a WHERE clause can wipe or corrupt entire tables. These must always fail CI.
 
-Benefit: It catches "Infrastructure as Code" (IaC) issues, which is a massive value-add for professional developers.
+---
 
-Implementation Strategy: The "Sidecar" Pattern
-Since you are building a VS Code extension, you don't want to force users to install these tools manually. You should bundle the binaries directly inside your extension.
+### 2️⃣ Runtime Correctness (React / TypeScript)
 
-Package Binaries: Include pre-compiled binaries for win32-x64, darwin-arm64, and linux-x64 in a bin/ folder.
+| Rule ID | New Severity |
+|-------|--------------|
+| `useExhaustiveDependencies` | **CRITICAL** |
+| `noArrayIndexKey` | **MAJOR** |
+| `noGlobalIsNan` | **MAJOR** |
+| `noExplicitAny` | **MAJOR** |
+| `noImplicitAnyLet` | **MAJOR** |
 
-The Wrapper Logic: In your analysisQueue.ts, create a generic runner that calls these tools via child_process.exec.
+**Exception Rule:**  
+If `useExhaustiveDependencies` is explicitly justified via comment or disable directive, downgrade to **MINOR**.
 
-JSON Translation: Most of these tools (especially Semgrep and Biome) output JSON. You just need to map their JSON output to your CodeHealthMetrics interface.
+---
+
+### 3️⃣ Cyclomatic Complexity (AI-Generated Rules)
+
+Map by **measured complexity value**, not rule name.
+
+| Cyclomatic Complexity | Severity |
+|-----------------------|----------|
+| ≥ 40 | **CRITICAL** |
+| 25 – 39 | **MAJOR** |
+| 15 – 24 | **MINOR** |
+| < 15 | Ignore |
+
+**Rationale:**  
+High complexity correlates strongly with bugs, untestable code, and refactor avoidance. These findings are high-signal and must be surfaced.
+
+---
+
+### 4️⃣ Build / Infrastructure / Environment Errors
+
+| Rule ID | Severity |
+|-------|----------|
+| `internalError/io` | **CRITICAL** |
+
+**Rationale:**  
+Missing assets, broken file references, or IO errors indicate broken builds or deployment failures—not code smells.
+
+---
+
+### 5️⃣ TypeScript Safety & API Correctness
+
+| Rule ID | Severity |
+|-------|----------|
+| `noNonNullAssertion` | **MAJOR** |
+| `useNumberNamespace` | **MINOR** |
+| `noInferrableTypes` | **INFO** |
+
+---
+
+### 6️⃣ Code Structure & Readability
+
+| Rule ID | Severity |
+|-------|----------|
+| `useArrowFunction` | **INFO** |
+| `noForEach` | **INFO** |
+| `useTemplate` | **INFO** |
+
+**Guideline:**  
+These must never block PRs or be marked as errors.
+
+---
+
+### 7️⃣ Import & Style Rules (Noise Control)
+
+| Rule ID | Severity |
+|-------|----------|
+| `useImportType` | **INFO** or **HIDDEN** |
+
+**Special Handling Required:**
+- Auto-fixable
+- Collapsed in UI
+- Hidden by default
+
+This rule often represents **40–50% of total findings** and must not dominate reports.
+
+---
+
+## 🧠 Post-Processing Severity Modifiers
+
+Apply **after** base severity mapping.
+
+### 🔻 Auto-Downgrade Logic
+If **all** are true:
+- `confidence < 85`
+- `impact < 70`
+- `category == maintainability`
+
+➡ Downgrade severity by **one level**.
+
+---
+
+### 🔺 Auto-Upgrade Logic
+If **any** are true:
+- File path contains `/supabase/` or `/migrations/`
+- File path contains `/stores/` or `/services/`
+- `confidence ≥ 95` AND `impact ≥ 90`
+
+➡ Upgrade severity by **one level** (max = **CRITICAL**).
+
+---
+
+## 📊 Expected Distribution (Healthy Outcome)
+
+After re-mapping a large issue set (~400 issues), expect roughly:
+
+| Severity | Approx % |
+|--------|----------|
+| BLOCKER | 2–3% |
+| CRITICAL | 5–8% |
+| MAJOR | 15–20% |
+| MINOR | 15–20% |
+| INFO / Hidden | 50%+ |
+
+This distribution is **intentional** and desirable.
+
+---
+
+## ✅ Success Criteria
+
+Your output is correct if:
+
+- Developers immediately see what can break prod
+- Style issues no longer drown out real problems
+- Senior engineers would not disable the tool
+- CI failures are rare but meaningful
+
+**Do not optimize for quantity of errors. Optimize for trust.**

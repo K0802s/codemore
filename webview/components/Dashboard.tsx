@@ -14,6 +14,8 @@ import {
     Wrench,
     Accessibility,
     Star,
+    Folder,
+    FileText,
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -29,7 +31,7 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, issues, fileDiscovery, o
             <div className="dashboard empty-state">
                 {fileDiscovery ? (
                     <div className="discovery-empty-state">
-                        <p className="discovery-count">📁 {fileDiscovery.totalFiles.toLocaleString()} files discovered</p>
+                        <p className="discovery-count"><Folder size={48} /> {fileDiscovery.totalFiles.toLocaleString()} files discovered</p>
                         <p>Click "Analyze Workspace" to start code analysis.</p>
                     </div>
                 ) : (
@@ -96,8 +98,8 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, issues, fileDiscovery, o
         <div className="dashboard">
             {/* Health Score */}
             <div className="score-card">
-                <div className="score-circle" style={{ borderColor: getScoreColor(metrics.overallScore) }}>
-                    <span className="score-value">{Math.round(metrics.overallScore)}</span>
+                <div className="score-circle" style={{ borderColor: getScoreColor(metrics.overallScore || 0) }}>
+                    <span className="score-value">{Math.round(metrics.overallScore || 0)}</span>
                     <span className="score-label">Health Score</span>
                 </div>
             </div>
@@ -107,7 +109,7 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, issues, fileDiscovery, o
                 <div className="stat-card">
                     <span className="codicon codicon-file stat-icon"></span>
                     <div className="stat-content">
-                        <span className="stat-value">{metrics.filesAnalyzed}</span>
+                        <span className="stat-value">{metrics.filesAnalyzed?.toLocaleString() || 0}</span>
                         <span className="stat-label">Files Analyzed</span>
                     </div>
                 </div>
@@ -115,7 +117,7 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, issues, fileDiscovery, o
                 <div className="stat-card">
                     <span className="codicon codicon-folder stat-icon"></span>
                     <div className="stat-content">
-                        <span className="stat-value">{fileDiscovery?.totalFiles?.toLocaleString() || metrics.totalFiles}</span>
+                        <span className="stat-value">{(fileDiscovery?.totalFiles || metrics.totalFiles || 0).toLocaleString()}</span>
                         <span className="stat-label">Total Files</span>
                     </div>
                 </div>
@@ -123,7 +125,7 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, issues, fileDiscovery, o
                 <div className="stat-card">
                     <span className="codicon codicon-symbol-text stat-icon"></span>
                     <div className="stat-content">
-                        <span className="stat-value">{metrics.linesOfCode.toLocaleString()}</span>
+                        <span className="stat-value">{(metrics.linesOfCode || 0).toLocaleString()}</span>
                         <span className="stat-label">Lines of Code</span>
                     </div>
                 </div>
@@ -131,7 +133,7 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, issues, fileDiscovery, o
                 <div className="stat-card">
                     <span className="codicon codicon-watch stat-icon"></span>
                     <div className="stat-content">
-                        <span className="stat-value">{formatDebt(metrics.technicalDebtMinutes)}</span>
+                        <span className="stat-value">{formatDebt(metrics.technicalDebtMinutes || 0)}</span>
                         <span className="stat-label">Tech Debt</span>
                     </div>
                 </div>
@@ -139,7 +141,7 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, issues, fileDiscovery, o
                 <div className="stat-card">
                     <span className="codicon codicon-graph stat-icon"></span>
                     <div className="stat-content">
-                        <span className="stat-value">{metrics.averageComplexity.toFixed(1)}</span>
+                        <span className="stat-value">{(metrics.averageComplexity || 0).toFixed(1)}</span>
                         <span className="stat-label">Avg Complexity</span>
                     </div>
                 </div>

@@ -321,6 +321,7 @@ export interface DaemonConfig {
     cacheEnabled: boolean;
     cacheTTLMinutes: number;
     externalTools?: Partial<ExternalToolsConfig>;
+    analysisTools?: 'both' | 'external' | 'internal';
 }
 
 export const DEFAULT_CONFIG: DaemonConfig = {
@@ -338,6 +339,7 @@ export const DEFAULT_CONFIG: DaemonConfig = {
     maxConcurrentAnalysis: 3,
     cacheEnabled: true,
     cacheTTLMinutes: 30,
+    analysisTools: 'both',
 };
 
 // ============================================================================
@@ -355,7 +357,8 @@ export type WebviewToExtensionMessage =
     | { type: 'analyzeWorkspace' }
     | { type: 'stopAnalysis' }
     | { type: 'refreshDashboard' }
-    | { type: 'openSettings' };
+    | { type: 'openSettings' }
+    | { type: 'exportIssues'; issues: CodeIssue[] };
 
 export type ExtensionToWebviewMessage =
     | { type: 'metricsUpdate'; metrics: CodeHealthMetrics }

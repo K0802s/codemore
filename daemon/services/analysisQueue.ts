@@ -19,6 +19,7 @@ interface QueueItem {
 
 type ProgressHandler = (progress: number, total: number, filePath: string) => void;
 type IssuesHandler = (issues: CodeIssue[]) => void;
+type CompleteHandler = () => void;
 
 export class AnalysisQueue {
     private queue: QueueItem[] = [];
@@ -26,6 +27,7 @@ export class AnalysisQueue {
     private isRunning = false;
     private progressHandlers: ProgressHandler[] = [];
     private issuesHandlers: IssuesHandler[] = [];
+    private completeHandlers: CompleteHandler[] = [];
     private processedCount = 0;
     private totalCount = 0;
 
@@ -48,6 +50,13 @@ export class AnalysisQueue {
      */
     onIssuesFound(handler: IssuesHandler): void {
         this.issuesHandlers.push(handler);
+    }
+
+    /**
+     * Register a completion handler
+     */
+    onComplete(handler: CompleteHandler): void {
+        this.completeHandlers.push(handler);
     }
 
     /**
@@ -113,6 +122,13 @@ export class AnalysisQueue {
         }
 
         this.isRunning = false;
+        
+        // Signal completion if we processed everything
+        if (this.queue.length === 0 && this.processing.size === 0 && this.totalCount > 0) {
+            for (const handler of this.completeHandlers) {
+                handler();
+            }
+        }
     }
 
     /**
@@ -187,11 +203,19 @@ export class AnalysisQueue {
     }
 
     /**
-     * Clear the queue
+     * Clear the queue and reset counters
      */
     clear(): void {
         this.queue = [];
         this.processing.clear();
+        this.processedCount = 0;
+        this.totalCount = 0;
+    }
+
+    /**
+     * Reset analysis state (for new workspace analysis)
+     */
+    reset(): void {
         this.processedCount = 0;
         this.totalCount = 0;
     }

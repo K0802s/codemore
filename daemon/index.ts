@@ -143,6 +143,16 @@ const handlers: Record<string, RequestHandler> = {
                 }
             });
 
+            analysisQueue.onComplete(() => {
+                // Analysis completed - send updated metrics
+                if (contextMap) {
+                    const metrics = contextMap.getHealthMetrics();
+                    notify('daemon/metricsUpdated', { metrics });
+                    notify('daemon/analysisComplete', { filePath: '' });
+                    log('Analysis complete');
+                }
+            });
+
             // Initialize file watcher
             fileWatcher = new FileWatcher(
                 workspacePath,
@@ -226,6 +236,9 @@ const handlers: Record<string, RequestHandler> = {
         }
 
         log('Starting workspace analysis...');
+
+        // Reset analysis counters for new workspace analysis
+        analysisQueue.reset();
 
         const files = await contextMap.getAllFiles();
         const analysisId = `analysis-${Date.now()}`;

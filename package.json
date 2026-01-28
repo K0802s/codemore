@@ -164,6 +164,21 @@
           "type": "boolean",
           "default": false,
           "description": "Enable anonymous usage telemetry"
+        },
+        "codemore.analysisTools": {
+          "type": "string",
+          "default": "both",
+          "enum": [
+            "both",
+            "external",
+            "internal"
+          ],
+          "enumDescriptions": [
+            "Use both external tools (Biome, Ruff, TFLint) and internal analyzers",
+            "Use only external tools (Biome, Ruff, TFLint)",
+            "Use only internal static analyzers"
+          ],
+          "description": "Select which analysis tools to use during code analysis"
         }
       }
     }
