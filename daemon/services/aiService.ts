@@ -119,6 +119,13 @@ export class AiService {
     }
 
     /**
+     * Check if AI is available (API key configured)
+     */
+    isAiAvailable(): boolean {
+        return !!this.config.apiKey;
+    }
+
+    /**
      * Analyze code and generate issues
      * 
      * Analysis Pipeline:

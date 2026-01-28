@@ -77,17 +77,28 @@ export class SuggestionEngine {
         // Get file content
         const content = await this.contextMap.getFileContent(issue.location.filePath);
 
-        // Generate suggestions (basic, non-AI)
-        const suggestions = await this.aiService.generateSuggestion(
-            issue,
-            content,
-            fileContext
-        );
+        // If AI is available, use AI-powered fix generation automatically
+        // This provides better suggestions when user requests them
+        let suggestions: CodeSuggestion[];
+        
+        if (this.aiService.isAiAvailable()) {
+            console.log(`[SuggestionEngine] AI available, generating AI-powered fix for: ${issueId}`);
+            // Use the full AI-powered approach with context gathering
+            suggestions = await this.generateAiFixForIssue(issueId, true);
+        } else {
+            console.log(`[SuggestionEngine] No AI available, generating basic suggestion for: ${issueId}`);
+            // Fallback to basic suggestions
+            suggestions = await this.aiService.generateSuggestion(
+                issue,
+                content,
+                fileContext
+            );
 
-        // Cache suggestions by issue ID and by suggestion ID
-        this.suggestionCache.set(issueId, suggestions);
-        for (const suggestion of suggestions) {
-            this.suggestionById.set(suggestion.id, suggestion);
+            // Cache suggestions by issue ID and by suggestion ID
+            this.suggestionCache.set(issueId, suggestions);
+            for (const suggestion of suggestions) {
+                this.suggestionById.set(suggestion.id, suggestion);
+            }
         }
 
         return suggestions;
