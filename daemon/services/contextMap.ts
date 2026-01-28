@@ -27,13 +27,14 @@ export class ContextMap {
     /**
      * Scan workspace for all files
      */
-    async scanWorkspace(): Promise<void> {
+    async scanWorkspace(): Promise<{ totalFiles: number; fileTypes: Record<string, number> }> {
         console.log(`[ContextMap] Scanning workspace: ${this.workspacePath}`);
 
-        const files = await this.findFiles(this.workspacePath);
-        console.log(`[ContextMap] Found ${files.length} files`);
+        const result = await this.findFilesWithStats(this.workspacePath);
+        console.log(`[ContextMap] Found ${result.totalFiles} files across ${Object.keys(result.fileTypes).length} file types`);
 
         this.lastFullAnalysis = Date.now();
+        return result;
     }
 
     /**
@@ -44,16 +45,110 @@ export class ContextMap {
     }
 
     /**
+     * Find all files and return statistics
+     */
+    private async findFilesWithStats(dir: string): Promise<{ totalFiles: number; fileTypes: Record<string, number>; files: string[] }> {
+        const files = await this.findFiles(dir);
+        const fileTypes: Record<string, number> = {};
+
+        for (const filePath of files) {
+            const ext = path.extname(filePath).toLowerCase() || path.basename(filePath).toLowerCase();
+            const category = this.getFileCategory(ext);
+            fileTypes[category] = (fileTypes[category] || 0) + 1;
+        }
+
+        return { totalFiles: files.length, fileTypes, files };
+    }
+
+    /**
+     * Get human-readable file category
+     */
+    private getFileCategory(ext: string): string {
+        const categories: Record<string, string> = {
+            '.ts': 'TypeScript',
+            '.tsx': 'TypeScript (React)',
+            '.js': 'JavaScript',
+            '.jsx': 'JavaScript (React)',
+            '.mjs': 'JavaScript',
+            '.cjs': 'JavaScript',
+            '.py': 'Python',
+            '.pyw': 'Python',
+            '.java': 'Java',
+            '.cs': 'C#',
+            '.go': 'Go',
+            '.rs': 'Rust',
+            '.rb': 'Ruby',
+            '.php': 'PHP',
+            '.cpp': 'C++',
+            '.c': 'C',
+            '.h': 'C/C++ Header',
+            '.hpp': 'C++ Header',
+            '.swift': 'Swift',
+            '.kt': 'Kotlin',
+            '.scala': 'Scala',
+            '.html': 'HTML',
+            '.htm': 'HTML',
+            '.css': 'CSS',
+            '.scss': 'SCSS',
+            '.sass': 'Sass',
+            '.less': 'Less',
+            '.vue': 'Vue',
+            '.svelte': 'Svelte',
+            '.json': 'JSON',
+            '.yaml': 'YAML',
+            '.yml': 'YAML',
+            '.toml': 'TOML',
+            '.xml': 'XML',
+            '.md': 'Markdown',
+            '.mdx': 'MDX',
+            '.sh': 'Shell',
+            '.bash': 'Shell',
+            '.ps1': 'PowerShell',
+            '.sql': 'SQL',
+            '.graphql': 'GraphQL',
+            'dockerfile': 'Docker',
+            '.dockerignore': 'Docker',
+        };
+        return categories[ext] || ext.replace('.', '').toUpperCase() || 'Other';
+    }
+
+    /**
      * Find all supported files recursively
      */
     private async findFiles(dir: string): Promise<string[]> {
         const files: string[] = [];
 
         const supportedExtensions = [
+            // JavaScript/TypeScript
             '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs',
+            // Python
+            '.py', '.pyw', '.pyx', '.pxd', '.pxi',
+            // Other languages
+            '.java', '.cs', '.go', '.rs', '.rb', '.php',
+            '.cpp', '.c', '.h', '.hpp', '.cc', '.cxx',
+            '.swift', '.kt', '.kts', '.scala',
+            // Web
+            '.html', '.htm', '.css', '.scss', '.sass', '.less',
+            '.vue', '.svelte', '.astro',
+            // Config/Data
+            '.json', '.yaml', '.yml', '.toml', '.xml',
+            '.md', '.mdx', '.markdown',
+            // Shell/Scripts
+            '.sh', '.bash', '.zsh', '.ps1', '.bat', '.cmd',
+            // Other
+            '.sql', '.graphql', '.gql', '.prisma',
         ];
 
-        const excludeDirs = ['node_modules', '.git', 'dist', 'build', 'out', '.next'];
+        // Docker files (no extension)
+        const specialFiles = [
+            'dockerfile', 'dockerfile.dev', 'dockerfile.prod',
+            'docker-compose.yml', 'docker-compose.yaml',
+            'compose.yml', 'compose.yaml',
+            '.dockerignore', 'makefile', 'rakefile', 'gemfile',
+            '.gitignore', '.eslintrc', '.prettierrc',
+        ];
+
+        const excludeDirs = ['node_modules', '.git', 'dist', 'build', 'out', '.next', '__pycache__', '.venv', 'venv', '.tox', '.pytest_cache'];
 
         try {
             const entries = await fs.promises.readdir(dir, { withFileTypes: true });
@@ -67,7 +162,8 @@ export class ContextMap {
                     }
                 } else if (entry.isFile()) {
                     const ext = path.extname(entry.name).toLowerCase();
-                    if (supportedExtensions.includes(ext)) {
+                    const fileName = entry.name.toLowerCase();
+                    if (supportedExtensions.includes(ext) || specialFiles.includes(fileName)) {
                         files.push(fullPath);
                     }
                 }

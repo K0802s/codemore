@@ -38,6 +38,12 @@
   padding: 0;
 }
 
+/* Lucide icon alignment */
+svg.lucide {
+  vertical-align: middle;
+  display: inline-block;
+}
+
 /* Base */
 body {
   font-family: var(--vscode-font-family);
@@ -90,6 +96,10 @@ body {
   padding: 4px 8px;
   border-radius: var(--border-radius);
   transition: background var(--transition-fast);
+  color: var(--vscode-foreground);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .icon-button:hover {
@@ -117,30 +127,166 @@ body {
 
 /* Progress Bar */
 .progress-bar-container {
-  padding: 8px 16px;
-  background: var(--vscode-editor-background);
+  padding: 12px 16px;
+  background: linear-gradient(135deg, var(--vscode-editor-background) 0%, var(--vscode-sideBar-background) 100%);
   border-bottom: 1px solid var(--vscode-panel-border);
 }
 
 .progress-info {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   font-size: 12px;
+  color: var(--vscode-foreground);
+  margin-bottom: 8px;
+}
+
+.progress-file {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+}
+
+.progress-icon {
+  font-size: 14px;
+}
+
+.progress-count {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   color: var(--vscode-descriptionForeground);
-  margin-bottom: 4px;
+}
+
+.progress-percent {
+  color: var(--vscode-foreground);
+  font-weight: 600;
 }
 
 .progress-bar {
-  height: 4px;
+  height: 6px;
   background: var(--vscode-progressBar-background);
-  border-radius: 2px;
+  border-radius: 3px;
   overflow: hidden;
+  opacity: 0.3;
 }
 
 .progress-fill {
   height: 100%;
+  background: linear-gradient(90deg, #4caf50, #8bc34a);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+  box-shadow: 0 0 8px rgba(76, 175, 80, 0.5);
+}
+
+.progress-eta {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  text-align: right;
+}
+
+/* File Discovery Banner */
+.file-discovery-banner {
+  padding: 12px 16px;
+  background: linear-gradient(135deg, rgba(33, 150, 243, 0.1) 0%, rgba(76, 175, 80, 0.1) 100%);
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.discovery-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.discovery-icon {
+  font-size: 16px;
+}
+
+.discovery-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+
+.file-type-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.file-type-chip {
+  padding: 3px 8px;
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.file-type-chip.more {
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+}
+
+/* Discovery Empty State */
+.discovery-empty-state {
+  text-align: center;
+}
+
+.discovery-count {
+  font-size: 24px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: var(--vscode-foreground);
+}
+
+/* File Types Grid */
+.file-types-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.file-type-card {
+  padding: 10px;
+  background: var(--vscode-sideBar-background);
+  border-radius: var(--border-radius);
+  text-align: center;
+}
+
+.file-type-count {
+  display: block;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--vscode-foreground);
+}
+
+.file-type-name {
+  display: block;
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground);
+  margin-bottom: 6px;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.file-type-bar {
+  height: 3px;
   background: var(--vscode-progressBar-background);
-  transition: width var(--transition-normal);
+  border-radius: 2px;
+  overflow: hidden;
+  opacity: 0.3;
+}
+
+.file-type-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #2196f3, #4caf50);
+  border-radius: 2px;
+  min-width: 2px;
 }
 
 /* Tab Navigation */
@@ -379,14 +525,16 @@ body {
   text-align: center;
 }
 
-.category-icon {
+.category-card .category-icon {
   font-size: 20px;
   margin-bottom: 4px;
+  color: var(--vscode-foreground);
 }
 
 .category-count {
   font-size: 16px;
   font-weight: 600;
+  color: var(--vscode-foreground);
 }
 
 .category-name {
@@ -509,6 +657,9 @@ body {
   font-size: 12px;
   cursor: pointer;
   transition: all var(--transition-fast);
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .filter-chip:hover {
@@ -580,12 +731,16 @@ body {
   background: var(--vscode-badge-background);
   color: var(--vscode-badge-foreground);
   text-transform: capitalize;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .issue-title {
   font-size: 14px;
   font-weight: 600;
   margin-bottom: 4px;
+  color: var(--vscode-foreground);
 }
 
 .issue-description {
@@ -605,6 +760,9 @@ body {
   cursor: pointer;
   font-size: 12px;
   text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .file-link:hover {
@@ -616,6 +774,12 @@ body {
   gap: 12px;
   font-size: 11px;
   color: var(--vscode-descriptionForeground);
+}
+
+.issue-meta span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .code-snippet {
@@ -823,6 +987,7 @@ body {
   font-size: 12px;
   font-weight: 500;
   margin: 0;
+  color: var(--vscode-foreground);
 }
 
 .top-issue-item .issue-file {

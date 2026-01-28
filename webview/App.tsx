@@ -14,6 +14,16 @@ import {
     WebviewToExtensionMessage,
     ExtensionToWebviewMessage,
 } from './types';
+import {
+    Zap,
+    RefreshCw,
+    Search,
+    Settings,
+    LayoutDashboard,
+    Bug,
+    Lightbulb,
+    AlertTriangle,
+} from 'lucide-react';
 
 // VS Code API interface
 interface VSCodeAPI {
@@ -38,6 +48,7 @@ const App: React.FC = () => {
     const [selectedSuggestion, setSelectedSuggestion] = useState<CodeSuggestion | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [analysisProgress, setAnalysisProgress] = useState<{ progress: number; total: number; currentFile?: string } | null>(null);
+    const [fileDiscovery, setFileDiscovery] = useState<{ totalFiles: number; fileTypes: Record<string, number> } | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [isDark, setIsDark] = useState(true);
 
@@ -55,6 +66,12 @@ const App: React.FC = () => {
                 break;
             case 'suggestionsUpdate':
                 setSuggestions(message.suggestions);
+                break;
+            case 'fileDiscovery':
+                setFileDiscovery({
+                    totalFiles: message.totalFiles,
+                    fileTypes: message.fileTypes,
+                });
                 break;
             case 'analysisProgress':
                 setAnalysisProgress({
@@ -122,12 +139,17 @@ const App: React.FC = () => {
         vscode.postMessage({ type: 'refreshDashboard' });
     };
 
+    // Handle open settings
+    const handleOpenSettings = () => {
+        vscode.postMessage({ type: 'openSettings' });
+    };
+
     return (
         <div className={`app ${isDark ? 'dark' : 'light'}`}>
             {/* Header */}
             <header className="app-header">
                 <h1 className="app-title">
-                    <span className="app-icon">⚡</span>
+                    <span className="app-icon"><Zap size={20} /></span>
                     CodeMore
                 </h1>
                 <div className="header-actions">
@@ -136,14 +158,21 @@ const App: React.FC = () => {
                         onClick={handleRefresh}
                         title="Refresh"
                     >
-                        🔄
+                        <RefreshCw size={16} />
                     </button>
                     <button
                         className="icon-button"
                         onClick={handleAnalyzeWorkspace}
                         title="Analyze Workspace"
                     >
-                        🔍
+                        <Search size={16} />
+                    </button>
+                    <button
+                        className="icon-button"
+                        onClick={handleOpenSettings}
+                        title="Settings"
+                    >
+                        <Settings size={16} />
                     </button>
                 </div>
             </header>
@@ -151,8 +180,33 @@ const App: React.FC = () => {
             {/* Error banner */}
             {error && (
                 <div className="error-banner">
-                    <span>⚠️ {error}</span>
+                    <span><AlertTriangle size={14} /> {error}</span>
                     <button onClick={() => setError(null)}>✕</button>
+                </div>
+            )}
+
+            {/* File Discovery Info */}
+            {fileDiscovery && !analysisProgress && (
+                <div className="file-discovery-banner">
+                    <div className="discovery-header">
+                        <span className="discovery-icon">📁</span>
+                        <span className="discovery-title">Discovered {fileDiscovery.totalFiles.toLocaleString()} files</span>
+                    </div>
+                    <div className="file-type-chips">
+                        {Object.entries(fileDiscovery.fileTypes)
+                            .sort(([, a], [, b]) => b - a)
+                            .slice(0, 8)
+                            .map(([type, count]) => (
+                                <span key={type} className="file-type-chip">
+                                    {type}: {count}
+                                </span>
+                            ))}
+                        {Object.keys(fileDiscovery.fileTypes).length > 8 && (
+                            <span className="file-type-chip more">
+                                +{Object.keys(fileDiscovery.fileTypes).length - 8} more
+                            </span>
+                        )}
+                    </div>
                 </div>
             )}
 
@@ -160,8 +214,16 @@ const App: React.FC = () => {
             {analysisProgress && (
                 <div className="progress-bar-container">
                     <div className="progress-info">
-                        <span>Analyzing: {analysisProgress.currentFile?.split(/[/\\]/).pop() || '...'}</span>
-                        <span>{analysisProgress.progress} / {analysisProgress.total}</span>
+                        <span className="progress-file">
+                            <span className="progress-icon">⚡</span>
+                            Analyzing: {analysisProgress.currentFile?.split(/[/\\]/).pop() || '...'}
+                        </span>
+                        <span className="progress-count">
+                            {analysisProgress.progress} / {analysisProgress.total} files
+                            <span className="progress-percent">
+                                ({Math.round((analysisProgress.progress / analysisProgress.total) * 100)}%)
+                            </span>
+                        </span>
                     </div>
                     <div className="progress-bar">
                         <div
@@ -170,6 +232,9 @@ const App: React.FC = () => {
                                 width: `${(analysisProgress.progress / analysisProgress.total) * 100}%`,
                             }}
                         />
+                    </div>
+                    <div className="progress-eta">
+                        {analysisProgress.total - analysisProgress.progress} files remaining
                     </div>
                 </div>
             )}
@@ -180,13 +245,13 @@ const App: React.FC = () => {
                     className={`tab-button ${activeTab === 'dashboard' ? 'active' : ''}`}
                     onClick={() => setActiveTab('dashboard')}
                 >
-                    📊 Dashboard
+                    <LayoutDashboard size={14} /> Dashboard
                 </button>
                 <button
                     className={`tab-button ${activeTab === 'issues' ? 'active' : ''}`}
                     onClick={() => setActiveTab('issues')}
                 >
-                    🐛 Issues
+                    <Bug size={14} /> Issues
                     {issues.length > 0 && (
                         <span className="badge">{issues.length}</span>
                     )}
@@ -195,7 +260,7 @@ const App: React.FC = () => {
                     className={`tab-button ${activeTab === 'suggestions' ? 'active' : ''}`}
                     onClick={() => setActiveTab('suggestions')}
                 >
-                    💡 Suggestions
+                    <Lightbulb size={14} /> Suggestions
                 </button>
             </nav>
 
@@ -212,6 +277,7 @@ const App: React.FC = () => {
                             <Dashboard
                                 metrics={metrics}
                                 issues={issues}
+                                fileDiscovery={fileDiscovery}
                                 onSelectIssue={handleSelectIssue}
                             />
                         )}

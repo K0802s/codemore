@@ -6,6 +6,21 @@
 
 import React, { useState, useMemo } from 'react';
 import { CodeIssue, IssueSeverity, IssueCategory } from '../types';
+import {
+    Search,
+    X,
+    Filter,
+    Bug,
+    AlertTriangle,
+    Gauge,
+    Shield,
+    Wrench,
+    Accessibility,
+    Star,
+    FileText,
+    Target,
+    Zap,
+} from 'lucide-react';
 
 interface IssueListProps {
     issues: CodeIssue[];
@@ -50,6 +65,18 @@ const IssueList: React.FC<IssueListProps> = ({
             case 'warning': return 1;
             case 'info': return 2;
             case 'hint': return 3;
+        }
+    };
+
+    const getCategoryIcon = (category: IssueCategory) => {
+        switch (category) {
+            case 'bug': return <Bug size={12} />;
+            case 'code-smell': return <AlertTriangle size={12} />;
+            case 'performance': return <Gauge size={12} />;
+            case 'security': return <Shield size={12} />;
+            case 'maintainability': return <Wrench size={12} />;
+            case 'accessibility': return <Accessibility size={12} />;
+            case 'best-practice': return <Star size={12} />;
         }
     };
 
@@ -146,7 +173,7 @@ const IssueList: React.FC<IssueListProps> = ({
             {/* Search and Filter Bar */}
             <div className="issue-list-header">
                 <div className="search-bar">
-                    <span className="search-icon">🔍</span>
+                    <span className="search-icon"><Search size={14} /></span>
                     <input
                         type="text"
                         placeholder="Search issues..."
@@ -156,7 +183,7 @@ const IssueList: React.FC<IssueListProps> = ({
                     />
                     {searchQuery && (
                         <button className="clear-button" onClick={() => setSearchQuery('')}>
-                            ✕
+                            <X size={14} />
                         </button>
                     )}
                 </div>
@@ -166,7 +193,7 @@ const IssueList: React.FC<IssueListProps> = ({
                         className={`filter-toggle ${showFilters ? 'active' : ''}`}
                         onClick={() => setShowFilters(!showFilters)}
                     >
-                        <span className="codicon codicon-settings-gear"></span> Filters
+                        <Filter size={14} /> Filters
                         {hasActiveFilters && <span className="filter-badge" />}
                     </button>
 
@@ -223,7 +250,7 @@ const IssueList: React.FC<IssueListProps> = ({
                                     key={category}
                                     className={`filter-chip ${selectedCategories.has(category) ? 'active' : ''}`}
                                     onClick={() => toggleCategory(category)}
-                                >  <span className={`codicon codicon-${getCategoryIconClass(category)}`}></span> {category.replace('-', ' ')}
+                                >  {getCategoryIcon(category)} {category.replace('-', ' ')}
                                 </button>
                             ))}
                         </div>
@@ -267,7 +294,7 @@ const IssueList: React.FC<IssueListProps> = ({
                                     {issue.severity}
                                 </span>
                                 <span className="category-badge">
-                                    <span className={`codicon codicon-${getCategoryIconClass(issue.category)}`}></span> {issue.category.replace('-', ' ')}
+                                    {getCategoryIcon(issue.category)} {issue.category.replace('-', ' ')}
                                 </span>
                             </div>
 
@@ -282,17 +309,17 @@ const IssueList: React.FC<IssueListProps> = ({
                                         onOpenFile(issue.location.filePath, issue.location.range.start.line + 1);
                                     }}
                                 >
-                                    📄 {issue.location.filePath.split(/[/\\]/).pop()}
+                                    <FileText size={12} /> {issue.location.filePath.split(/[/\\]/).pop()}
                                     :{issue.location.range.start.line + 1}
                                 </button>
                             </div>
 
                             <div className="issue-meta">
                                 <span className="confidence" title="Confidence">
-                                    🎯 {issue.confidence}%
+                                    <Target size={12} /> {issue.confidence}%
                                 </span>
                                 <span className="impact" title="Impact">
-                                    💥 {issue.impact}%
+                                    <Zap size={12} /> {issue.impact}%
                                 </span>
                             </div>
 

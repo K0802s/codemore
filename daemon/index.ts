@@ -149,8 +149,12 @@ const handlers: Record<string, RequestHandler> = {
                 }
             });
 
-            // Perform initial workspace scan
-            await contextMap.scanWorkspace();
+            // Perform initial workspace scan and notify about file discovery
+            const scanResult = await contextMap.scanWorkspace();
+            notify('daemon/fileDiscovery', { 
+                totalFiles: scanResult.totalFiles, 
+                fileTypes: scanResult.fileTypes 
+            });
 
             state.initialized = true;
             log('Initialization complete');
@@ -479,9 +483,11 @@ function cleanup(): void {
 
 log('Context Daemon starting...');
 
-// Signal ready to extension host
-if (process.send) {
-    process.send(JSON.stringify({ type: 'ready' }));
-}
-
-log('Context Daemon ready');
+// Small delay to ensure all handlers are set up
+setTimeout(() => {
+    // Signal ready to extension host
+    if (process.send) {
+        process.send(JSON.stringify({ type: 'ready' }));
+    }
+    log('Context Daemon ready');
+}, 100);

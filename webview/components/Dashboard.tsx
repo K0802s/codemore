@@ -6,18 +6,35 @@
 
 import React from 'react';
 import { CodeHealthMetrics, CodeIssue, IssueSeverity, IssueCategory } from '../types';
+import {
+    Bug,
+    AlertTriangle,
+    Gauge,
+    Shield,
+    Wrench,
+    Accessibility,
+    Star,
+} from 'lucide-react';
 
 interface DashboardProps {
     metrics: CodeHealthMetrics | null;
     issues: CodeIssue[];
+    fileDiscovery: { totalFiles: number; fileTypes: Record<string, number> } | null;
     onSelectIssue: (issue: CodeIssue) => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ metrics, issues, onSelectIssue }) => {
+const Dashboard: React.FC<DashboardProps> = ({ metrics, issues, fileDiscovery, onSelectIssue }) => {
     if (!metrics) {
         return (
             <div className="dashboard empty-state">
-                <p>No metrics available. Run an analysis to see code health data.</p>
+                {fileDiscovery ? (
+                    <div className="discovery-empty-state">
+                        <p className="discovery-count">📁 {fileDiscovery.totalFiles.toLocaleString()} files discovered</p>
+                        <p>Click "Analyze Workspace" to start code analysis.</p>
+                    </div>
+                ) : (
+                    <p>No metrics available. Run an analysis to see code health data.</p>
+                )}
             </div>
         );
     }
@@ -28,6 +45,18 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, issues, onSelectIssue })
             case 'warning': return 'var(--color-warning)';
             case 'info': return 'var(--color-info)';
             case 'hint': return 'var(--color-hint)';
+        }
+    };
+
+    const getCategoryIcon = (category: IssueCategory) => {
+        switch (category) {
+            case 'bug': return <Bug size={16} />;
+            case 'code-smell': return <AlertTriangle size={16} />;
+            case 'performance': return <Gauge size={16} />;
+            case 'security': return <Shield size={16} />;
+            case 'maintainability': return <Wrench size={16} />;
+            case 'accessibility': return <Accessibility size={16} />;
+            case 'best-practice': return <Star size={16} />;
         }
     };
 
@@ -84,6 +113,14 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, issues, onSelectIssue })
                 </div>
 
                 <div className="stat-card">
+                    <span className="codicon codicon-folder stat-icon"></span>
+                    <div className="stat-content">
+                        <span className="stat-value">{fileDiscovery?.totalFiles?.toLocaleString() || metrics.totalFiles}</span>
+                        <span className="stat-label">Total Files</span>
+                    </div>
+                </div>
+
+                <div className="stat-card">
                     <span className="codicon codicon-symbol-text stat-icon"></span>
                     <div className="stat-content">
                         <span className="stat-value">{metrics.linesOfCode.toLocaleString()}</span>
@@ -106,7 +143,41 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, issues, onSelectIssue })
                         <span className="stat-label">Avg Complexity</span>
                     </div>
                 </div>
+
+                <div className="stat-card">
+                    <span className="codicon codicon-code stat-icon"></span>
+                    <div className="stat-content">
+                        <span className="stat-value">{fileDiscovery ? Object.keys(fileDiscovery.fileTypes).length : '—'}</span>
+                        <span className="stat-label">File Types</span>
+                    </div>
+                </div>
             </div>
+
+            {/* File Types Breakdown */}
+            {fileDiscovery && Object.keys(fileDiscovery.fileTypes).length > 0 && (
+                <div className="section">
+                    <h3 className="section-title">Files by Type</h3>
+                    <div className="file-types-grid">
+                        {Object.entries(fileDiscovery.fileTypes)
+                            .sort(([, a], [, b]) => b - a)
+                            .slice(0, 12)
+                            .map(([type, count]) => (
+                                <div key={type} className="file-type-card">
+                                    <span className="file-type-count">{count}</span>
+                                    <span className="file-type-name">{type}</span>
+                                    <div className="file-type-bar">
+                                        <div 
+                                            className="file-type-bar-fill"
+                                            style={{
+                                                width: `${(count / fileDiscovery.totalFiles) * 100}%`
+                                            }}
+                                        />
+                                    </div>
+                                </div>
+                            ))}
+                    </div>
+                </div>
+            )}
 
             {/* Issues by Severity */}
             <div className="section">
@@ -144,7 +215,7 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, issues, onSelectIssue })
                         .sort(([, a], [, b]) => b - a)
                         .map(([category, count]) => (
                             <div key={category} className="category-card">
-                                <span className={`codicon codicon-${getCategoryIconClass(category)} category-icon`}></span>
+                                <span className="category-icon">{getCategoryIcon(category)}</span>
                                 <span className="category-count">{count}</span>
                                 <span className="category-name">{category.replace('-', ' ')}</span>
                             </div>

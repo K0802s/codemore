@@ -226,6 +226,10 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
             case 'refreshDashboard':
                 this.refreshDashboard();
                 break;
+            
+            case 'openSettings':
+                await vscode.commands.executeCommand('workbench.action.openSettings', 'codemore');
+                break;
         }
     }
 

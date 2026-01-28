@@ -2,10 +2,11 @@
  * AI Service
  * 
  * Handles communication with LLM APIs for code analysis.
- * Supports multiple providers (OpenAI, Anthropic, local).
+ * Supports multiple providers (OpenAI, Anthropic, Gemini, local).
  */
 
 import { DaemonConfig, CodeIssue, CodeSuggestion, FileContext, IssueCategory, IssueSeverity } from '../../shared/protocol';
+import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
 
 interface CacheEntry {
     response: string;
@@ -15,20 +16,43 @@ interface CacheEntry {
 export class AiService {
     private cache = new Map<string, CacheEntry>();
     private config: DaemonConfig;
+    private geminiModel: GenerativeModel | null = null;
 
     constructor(config: DaemonConfig) {
         this.config = config;
+        this.initGemini();
+    }
+
+    /**
+     * Initialize Gemini model if configured
+     */
+    private initGemini(): void {
+        if (this.config.aiProvider === 'gemini' && this.config.apiKey) {
+            try {
+                const genAI = new GoogleGenerativeAI(this.config.apiKey);
+                this.geminiModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-preview-09-2025' });
+                console.log('[AiService] Gemini model initialized');
+            } catch (error) {
+                console.error('[AiService] Failed to initialize Gemini:', error);
+                this.geminiModel = null;
+            }
+        }
     }
 
     /**
      * Update configuration
      */
     updateConfig(config: DaemonConfig): void {
+        const providerChanged = config.aiProvider !== this.config.aiProvider;
+        const keyChanged = config.apiKey !== this.config.apiKey;
+        
         this.config = config;
 
-        // Clear cache if provider changed
-        if (config.aiProvider !== this.config.aiProvider) {
+        // Clear cache and reinitialize if provider or key changed
+        if (providerChanged || keyChanged) {
             this.cache.clear();
+            this.geminiModel = null;
+            this.initGemini();
         }
     }
 
@@ -107,6 +131,8 @@ export class AiService {
                 return await this.callOpenAI(prompt);
             case 'anthropic':
                 return await this.callAnthropic(prompt);
+            case 'gemini':
+                return await this.callGemini(prompt);
             case 'local':
                 return await this.callLocal(prompt);
             default:
@@ -210,6 +236,65 @@ export class AiService {
             return [];
         } catch (error) {
             console.error('[AiService] Anthropic API error:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Call Google Gemini API using the official SDK
+     */
+    private async callGemini(prompt: string): Promise<CodeIssue[]> {
+        try {
+            // Initialize model if not already done
+            if (!this.geminiModel) {
+                if (!this.config.apiKey) {
+                    throw new Error('Gemini API key not configured');
+                }
+                const genAI = new GoogleGenerativeAI(this.config.apiKey);
+                this.geminiModel = genAI.getGenerativeModel({ 
+                    model: 'gemini-1.5-flash',
+                    generationConfig: {
+                        temperature: 0.3,
+                        maxOutputTokens: 4000,
+                    },
+                });
+            }
+
+            const systemPrompt = `You are a code quality analyzer. Analyze the provided code and return issues in JSON format.
+Return ONLY a valid JSON array, no additional text or markdown.`;
+
+            const result = await this.geminiModel.generateContent([
+                { text: systemPrompt },
+                { text: prompt },
+            ]);
+
+            const response = await result.response;
+            const content = response.text();
+
+            if (!content) {
+                console.log('[AiService] Gemini returned empty response');
+                return [];
+            }
+
+            console.log('[AiService] Gemini response received, parsing...');
+
+            // Parse JSON from response - try to extract JSON array
+            const jsonMatch = content.match(/\[[\s\S]*\]/);
+            if (jsonMatch) {
+                try {
+                    const issues = JSON.parse(jsonMatch[0]);
+                    console.log(`[AiService] Gemini found ${issues.length} issues`);
+                    return issues;
+                } catch (parseError) {
+                    console.error('[AiService] Failed to parse Gemini JSON:', parseError);
+                    return [];
+                }
+            }
+
+            console.log('[AiService] No JSON array found in Gemini response');
+            return [];
+        } catch (error) {
+            console.error('[AiService] Gemini API error:', error);
             throw error;
         }
     }

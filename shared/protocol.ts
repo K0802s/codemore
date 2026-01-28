@@ -187,6 +187,7 @@ export const RpcErrorCodes = {
 // Daemon -> Extension Host notifications
 export interface DaemonNotifications {
     'daemon/ready': { version: string };
+    'daemon/fileDiscovery': { totalFiles: number; fileTypes: Record<string, number> };
     'daemon/analysisProgress': { filePath: string; progress: number; total: number };
     'daemon/analysisComplete': { filePath: string; issues: CodeIssue[] };
     'daemon/issuesUpdated': { issues: CodeIssue[] };
@@ -251,7 +252,7 @@ export interface DaemonMethods {
 // ============================================================================
 
 export interface DaemonConfig {
-    aiProvider: 'openai' | 'anthropic' | 'local';
+    aiProvider: 'openai' | 'anthropic' | 'gemini' | 'local';
     apiKey?: string;
     autoAnalyze: boolean;
     analysisDelay: number;
@@ -293,12 +294,14 @@ export type WebviewToExtensionMessage =
     | { type: 'dismissIssue'; issueId: string }
     | { type: 'openFile'; filePath: string; line?: number }
     | { type: 'analyzeWorkspace' }
-    | { type: 'refreshDashboard' };
+    | { type: 'refreshDashboard' }
+    | { type: 'openSettings' };
 
 export type ExtensionToWebviewMessage =
     | { type: 'metricsUpdate'; metrics: CodeHealthMetrics }
     | { type: 'issuesUpdate'; issues: CodeIssue[] }
     | { type: 'suggestionsUpdate'; suggestions: CodeSuggestion[] }
+    | { type: 'fileDiscovery'; totalFiles: number; fileTypes: Record<string, number> }
     | { type: 'analysisProgress'; progress: number; total: number; currentFile?: string }
     | { type: 'analysisComplete' }
     | { type: 'error'; message: string }

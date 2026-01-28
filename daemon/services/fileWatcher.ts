@@ -137,15 +137,51 @@ export class FileWatcher {
      */
     private shouldAnalyze(filePath: string): boolean {
         const ext = path.extname(filePath).toLowerCase();
+        const fileName = path.basename(filePath).toLowerCase();
 
         // Supported file extensions
         const supportedExtensions = [
+            // JavaScript/TypeScript
             '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs',
-            '.py', '.java', '.cs', '.go', '.rs', '.rb',
-            '.cpp', '.c', '.h', '.hpp',
-            '.vue', '.svelte',
-            '.json', '.yaml', '.yml',
+            // Python
+            '.py', '.pyw', '.pyx', '.pxd', '.pxi',
+            // Other languages
+            '.java', '.cs', '.go', '.rs', '.rb', '.php',
+            '.cpp', '.c', '.h', '.hpp', '.cc', '.cxx',
+            '.swift', '.kt', '.kts', '.scala',
+            // Web
+            '.html', '.htm', '.css', '.scss', '.sass', '.less',
+            '.vue', '.svelte', '.astro',
+            // Config/Data
+            '.json', '.yaml', '.yml', '.toml', '.xml',
+            '.md', '.mdx', '.markdown',
+            // Shell/Scripts
+            '.sh', '.bash', '.zsh', '.ps1', '.bat', '.cmd',
+            // Other
+            '.sql', '.graphql', '.gql', '.prisma',
+            '.env', '.ini', '.cfg',
         ];
+
+        // Docker files (no extension)
+        const dockerFiles = [
+            'dockerfile', 'dockerfile.dev', 'dockerfile.prod',
+            'docker-compose.yml', 'docker-compose.yaml',
+            'compose.yml', 'compose.yaml',
+            '.dockerignore',
+        ];
+
+        // Special files without extension
+        const specialFiles = [
+            'makefile', 'rakefile', 'gemfile', 'procfile',
+            '.gitignore', '.eslintrc', '.prettierrc',
+            '.babelrc', '.editorconfig', '.env.local',
+            '.env.development', '.env.production',
+        ];
+
+        // Check special files
+        if (dockerFiles.includes(fileName) || specialFiles.includes(fileName)) {
+            return true;
+        }
 
         if (!supportedExtensions.includes(ext)) {
             return false;

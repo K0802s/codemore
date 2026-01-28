@@ -66,6 +66,7 @@ export class DaemonManager implements vscode.Disposable {
             this.process = fork(daemonPath, [], {
                 cwd: this.context.extensionPath,
                 stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
+                execArgv: [], // Disable inspector to prevent port conflicts
                 env: {
                     ...process.env,
                     NODE_ENV: 'production',
@@ -368,8 +369,9 @@ export class DaemonManager implements vscode.Disposable {
         return new Promise((resolve) => {
             const kill = (treeKill as any).default || treeKill;
             kill(pid, 'SIGKILL', (error: Error | undefined) => {
-                if (error) {
-                    this.outputChannel.appendLine(`Force kill error: ${error}`);
+                // Ignore "process not found" errors - process already exited
+                if (error && !error.message.includes('not found')) {
+                    this.outputChannel.appendLine(`Force kill warning: ${error.message}`);
                 }
                 resolve();
             });

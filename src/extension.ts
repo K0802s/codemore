@@ -45,23 +45,35 @@ async function startDaemonAndInitialize(context: vscode.ExtensionContext): Promi
     const workspaceFolders = vscode.workspace.workspaceFolders;
     if (workspaceFolders && workspaceFolders.length > 0) {
         const config = getConfiguration();
-        const result = await rpcClient.call('initialize', {
-            workspacePath: workspaceFolders[0].uri.fsPath,
-            config,
-        });
+        try {
+            outputChannel.appendLine(`Initializing daemon with workspace: ${workspaceFolders[0].uri.fsPath}`);
+            const result = await rpcClient.call('initialize', {
+                workspacePath: workspaceFolders[0].uri.fsPath,
+                config,
+            }, 15000); // 15 second timeout for initialization
 
-        if (result.success) {
-            outputChannel.appendLine(`Daemon initialized: v${result.version}`);
-            isDaemonReady = true;
-            updateStatusBar('ready');
-            
-            // Notify webview that we're ready
-            webviewProvider?.notifyDaemonReady();
+            if (result.success) {
+                outputChannel.appendLine(`Daemon initialized successfully: v${result.version}`);
+                isDaemonReady = true;
+                updateStatusBar('ready');
+                
+                // Notify webview that we're ready
+                webviewProvider?.notifyDaemonReady();
+            } else {
+                throw new Error('Initialization returned success=false');
+            }
+        } catch (error) {
+            outputChannel.appendLine(`Daemon initialization failed: ${error}`);
+            outputChannel.appendLine('Daemon is running but not initialized. Some features may not work.');
+            updateStatusBar('error');
+            vscode.window.showWarningMessage('CodeMore: Daemon failed to initialize. Try restarting the daemon.');
         }
     } else {
-        // No workspace, but daemon is ready
-        isDaemonReady = true;
+        outputChannel.appendLine('No workspace folder found, skipping daemon initialization');
+        // No workspace, daemon is running but not initialized - limited functionality
+        isDaemonReady = false;
         updateStatusBar('ready');
+        vscode.window.showWarningMessage('CodeMore: Open a folder to enable code analysis features.');
     }
 }
 
@@ -278,6 +290,9 @@ function registerCommands(context: vscode.ExtensionContext): void {
             try {
                 await daemonManager?.restart();
 
+                // Wait a bit for daemon to be fully ready for messages
+                await new Promise(resolve => setTimeout(resolve, 500));
+
                 // Setup daemon notifications again
                 setupDaemonNotifications();
 
@@ -285,17 +300,21 @@ function registerCommands(context: vscode.ExtensionContext): void {
                 const workspaceFolders = vscode.workspace.workspaceFolders;
                 if (workspaceFolders && rpcClient) {
                     const config = getConfiguration();
+                    outputChannel.appendLine(`Re-initializing daemon with workspace: ${workspaceFolders[0].uri.fsPath}`);
                     const result = await rpcClient.call('initialize', {
                         workspacePath: workspaceFolders[0].uri.fsPath,
                         config,
-                    });
+                    }, 15000);
 
                     if (result.success) {
                         isDaemonReady = true;
                         webviewProvider?.notifyDaemonReady();
+                        outputChannel.appendLine('Daemon re-initialized successfully');
                     }
                 } else {
-                    isDaemonReady = true;
+                    // No workspace folder - daemon can't be initialized
+                    isDaemonReady = false;
+                    vscode.window.showWarningMessage('CodeMore: Open a folder to enable code analysis features.');
                 }
 
                 updateStatusBar('ready');
@@ -354,7 +373,8 @@ function registerEventHandlers(context: vscode.ExtensionContext): void {
         })
     );
 
-    // File change handler - invalidate cache
+    // File change handler - invalidate cache with debouncing
+    const invalidateDebounceMap = new Map<string, NodeJS.Timeout>();
     context.subscriptions.push(
         vscode.workspace.onDidChangeTextDocument((event) => {
             if (!rpcClient || !isDaemonReady) {
@@ -362,7 +382,24 @@ function registerEventHandlers(context: vscode.ExtensionContext): void {
             }
 
             const filePath = event.document.uri.fsPath;
-            rpcClient.notify('invalidateFile', { filePath });
+            
+            // Skip non-file URIs (like output channels, extension-output, etc.)
+            if (!event.document.uri.scheme.startsWith('file')) {
+                return;
+            }
+            
+            // Debounce invalidation per file to reduce log spam
+            const existingTimer = invalidateDebounceMap.get(filePath);
+            if (existingTimer) {
+                clearTimeout(existingTimer);
+            }
+            
+            const timer = setTimeout(() => {
+                invalidateDebounceMap.delete(filePath);
+                rpcClient!.notify('invalidateFile', { filePath });
+            }, 500);
+            
+            invalidateDebounceMap.set(filePath, timer);
         })
     );
 

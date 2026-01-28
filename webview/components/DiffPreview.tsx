@@ -4,6 +4,7 @@
 
 import React, { useState } from 'react';
 import { CodeIssue, CodeSuggestion } from '../types';
+import { Lightbulb, Search, Eye, Check } from 'lucide-react';
 
 interface DiffPreviewProps {
     issue: CodeIssue | null;
@@ -27,7 +28,7 @@ const DiffPreview: React.FC<DiffPreviewProps> = ({
     if (!issue) {
         return (
             <div className="diff-preview empty-state">
-                <div className="empty-icon">💡</div>
+                <div className="empty-icon"><Lightbulb size={48} /></div>
                 <h3>No Issue Selected</h3>
                 <p>Select an issue from the list to view suggested fixes.</p>
             </div>
@@ -37,7 +38,7 @@ const DiffPreview: React.FC<DiffPreviewProps> = ({
     if (!selectedSuggestion) {
         return (
             <div className="diff-preview empty-state">
-                <div className="empty-icon">🔍</div>
+                <div className="empty-icon"><Search size={48} /></div>
                 <h3>No Suggestions Available</h3>
                 <p>No automated fixes are available for this issue.</p>
             </div>
@@ -87,10 +88,14 @@ const DiffPreview: React.FC<DiffPreviewProps> = ({
 
             <div className="diff-actions">
                 <button className="action-button secondary" onClick={() => onOpenFile(selectedSuggestion.location.filePath, selectedSuggestion.location.range.start.line + 1)}>
-                    <span className="codicon codicon-eye"></span> Preview
+                    <Eye size={14} /> Preview
                 </button>
                 <button className="action-button primary" onClick={handleApply} disabled={isApplying}>
-                    {isApplying ? 'Applying...' : 'Apply Fix'}
+                    {isApplying ? (
+                        <>Applying...</>
+                    ) : (
+                        <><Check size={14} /> Apply Fix</>
+                    )}
                 </button>
             </div>
         </div>
