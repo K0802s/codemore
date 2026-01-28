@@ -159,49 +159,14 @@ export class AiService {
 
         console.log(`[AiService] External tools: ${externalIssueCount} issues, Static analysis: ${staticIssueCount} issues (mode: ${analysisMode})`);
 
-        // If no API key, return combined analysis
-        if (!this.config.apiKey) {
-            const totalTime = Date.now() - startTime;
-            console.log(`[AiService] No API key configured, returning ${combinedIssues.length} total issues (${totalTime}ms)`);
-            // Apply severity remapping for better UX
-            return this.severityRemapper.remapIssues(combinedIssues);
-        }
-
-        // Check cache for AI results
-        const cacheKey = this.getCacheKey(filePath, content);
-        const cached = this.getFromCache(cacheKey);
-        if (cached) {
-            // Merge cached AI issues with combined issues
-            const aiIssues = JSON.parse(cached) as CodeIssue[];
-            const mergedIssues = this.mergeIssues(combinedIssues, aiIssues);
-            // Apply severity remapping for better UX
-            return this.severityRemapper.remapIssues(mergedIssues);
-        }
-
-        // Step 3: Use combined issues to identify "hot spots" for AI focus
-        // This saves API costs by only sending complex/problematic areas
-        // External tool findings provide additional context for AI
-        const hotSpots = this.identifyHotSpots(combinedIssues);
-        const externalContext = this.externalToolRunner.getAvailableToolsContext();
+        // IMPORTANT: AI is NEVER called automatically during analysis
+        // AI is only used when explicitly requested via generateAiFixForIssue()
+        // This keeps analysis fast and cost-effective
+        const totalTime = Date.now() - startTime;
+        console.log(`[AiService] Analysis complete: ${combinedIssues.length} total issues (${totalTime}ms, no AI)`);
         
-        try {
-            const aiIssues = await this.callAiApi(filePath, content, context, hotSpots, externalContext);
-
-            // Cache the AI result
-            this.setCache(cacheKey, JSON.stringify(aiIssues));
-
-            // Merge all issues: external + static + AI
-            const totalTime = Date.now() - startTime;
-            const finalIssues = this.mergeIssues(combinedIssues, aiIssues);
-            console.log(`[AiService] AI analysis added ${aiIssues.length} issues, total: ${finalIssues.length} (${totalTime}ms)`);
-            // Apply severity remapping for better UX
-            return this.severityRemapper.remapIssues(finalIssues);
-        } catch (error) {
-            console.error('[AiService] API call failed, returning combined analysis only:', error);
-            // External + static analysis already ran, return those issues
-            // Apply severity remapping for better UX
-            return this.severityRemapper.remapIssues(combinedIssues);
-        }
+        // Apply severity remapping for better UX
+        return this.severityRemapper.remapIssues(combinedIssues);
     }
 
     /**
@@ -359,6 +324,276 @@ export class AiService {
         };
 
         return [suggestion];
+    }
+
+    /**
+     * Generate AI-powered fix for a specific issue with context
+     * This is the targeted approach - only called when user selects an issue
+     * 
+     * @param issue The issue to fix
+     * @param fileContent The content of the file containing the issue
+     * @param context The file context
+     * @param relatedFiles Optional related file contexts for better understanding
+     * @returns Array of AI-generated fix suggestions with diffs
+     */
+    async generateAiFixForIssue(
+        issue: CodeIssue,
+        fileContent: string,
+        context: FileContext,
+        relatedFiles: Array<{ path: string; content: string; context: FileContext }> = []
+    ): Promise<CodeSuggestion[]> {
+        console.log(`[AiService] Generating AI fix for issue: ${issue.id}`);
+
+        // If no API key, return basic suggestion
+        if (!this.config.apiKey) {
+            console.log('[AiService] No API key configured, returning basic suggestion');
+            return this.generateSuggestion(issue, fileContent, context);
+        }
+
+        try {
+            // Build targeted prompt focused on this specific issue
+            const prompt = this.buildFixPrompt(issue, fileContent, context, relatedFiles);
+            
+            // Call AI API to generate fix
+            const fixes = await this.callAiForFix(prompt, issue);
+            
+            console.log(`[AiService] Generated ${fixes.length} AI-powered fix suggestions`);
+            return fixes;
+        } catch (error) {
+            console.error('[AiService] Failed to generate AI fix:', error);
+            // Fallback to basic suggestion
+            return this.generateSuggestion(issue, fileContent, context);
+        }
+    }
+
+    /**
+     * Build a targeted prompt for fixing a specific issue
+     * This is much more focused than general code analysis
+     */
+    private buildFixPrompt(
+        issue: CodeIssue,
+        fileContent: string,
+        context: FileContext,
+        relatedFiles: Array<{ path: string; content: string; context: FileContext }>
+    ): string {
+        // Extract the relevant code section (with context around the issue)
+        const lines = fileContent.split('\n');
+        const issueStartLine = issue.location.range.start.line;
+        const issueEndLine = issue.location.range.end.line;
+        
+        // Get 10 lines before and after for context
+        const contextStart = Math.max(0, issueStartLine - 10);
+        const contextEnd = Math.min(lines.length, issueEndLine + 10);
+        const relevantCode = lines.slice(contextStart, contextEnd).join('\n');
+        
+        // Build related files context
+        let relatedFilesSection = '';
+        if (relatedFiles.length > 0) {
+            relatedFilesSection = '\n\nRELATED FILES FOR CONTEXT:\n';
+            for (const rf of relatedFiles) {
+                const rfLines = rf.content.split('\n');
+                const truncated = rfLines.slice(0, 50).join('\n');
+                relatedFilesSection += `\n${rf.path}:\n\`\`\`${rf.context.language}\n${truncated}${rfLines.length > 50 ? '\n... (truncated)' : ''}\n\`\`\`\n`;
+            }
+        }
+
+        return `You are an expert code refactoring assistant. Generate a secure, reliable fix for the following code issue.
+
+FILE: ${issue.location.filePath}
+LANGUAGE: ${context.language}
+
+ISSUE DETAILS:
+- Title: ${issue.title}
+- Description: ${issue.description}
+- Category: ${issue.category}
+- Severity: ${issue.severity}
+- Lines: ${issueStartLine}-${issueEndLine}
+
+PROBLEMATIC CODE (lines ${contextStart}-${contextEnd}):
+\`\`\`${context.language}
+${relevantCode}
+\`\`\`
+
+FILE CONTEXT:
+- Imports: ${context.imports.map(i => i.module).join(', ')}
+- Symbols: ${context.symbols.map(s => `${s.name} (${s.kind})`).join(', ')}
+- Dependencies: ${context.dependencies.join(', ')}
+${relatedFilesSection}
+
+TASK:
+Generate 1-3 concrete fix suggestions for this issue. Each fix should:
+1. Be secure and follow best practices
+2. Maintain existing functionality while fixing the issue
+3. Be minimal - only change what's necessary
+4. Include clear explanations of what changed and why
+5. Consider edge cases and potential side effects
+
+Return ONLY a valid JSON array with this structure:
+[
+  {
+    "id": "fix-${issue.id}-1",
+    "issueId": "${issue.id}",
+    "title": "Brief fix description",
+    "description": "Detailed explanation of the fix, including what was changed and why this approach is secure and reliable",
+    "originalCode": "exact code that will be replaced",
+    "suggestedCode": "the fixed code",
+    "diff": "unified diff format showing the change",
+    "location": ${JSON.stringify(issue.location)},
+    "confidence": 85,
+    "impact": 80,
+    "tags": ["${issue.category}", "${issue.severity}", "ai-generated"]
+  }
+]
+
+IMPORTANT:
+- originalCode must be an exact substring from the file that can be replaced
+- suggestedCode should be production-ready, tested code
+- diff should be in unified diff format (- for removed, + for added lines)
+- Include line numbers in the location object
+- confidence should be 70-95 (higher if you're certain the fix is correct)
+- Return ONLY the JSON array, no markdown, no explanations outside the JSON`;
+    }
+
+    /**
+     * Call AI API specifically for generating fixes
+     * Returns structured CodeSuggestion objects
+     */
+    private async callAiForFix(prompt: string, issue: CodeIssue): Promise<CodeSuggestion[]> {
+        let responseText: string;
+
+        switch (this.config.aiProvider) {
+            case 'openai':
+                responseText = await this.callOpenAIForFix(prompt);
+                break;
+            case 'anthropic':
+                responseText = await this.callAnthropicForFix(prompt);
+                break;
+            case 'gemini':
+                responseText = await this.callGeminiForFix(prompt);
+                break;
+            case 'local':
+                responseText = await this.callLocalForFix(prompt);
+                break;
+            default:
+                throw new Error(`Unsupported AI provider: ${this.config.aiProvider}`);
+        }
+
+        // Parse the response
+        const jsonMatch = responseText.match(/\[[\s\S]*\]/);
+        if (!jsonMatch) {
+            console.error('[AiService] No JSON array found in AI response');
+            throw new Error('Failed to parse AI response');
+        }
+
+        const suggestions = JSON.parse(jsonMatch[0]) as CodeSuggestion[];
+        return suggestions;
+    }
+
+    /**
+     * Call OpenAI for fix generation
+     */
+    private async callOpenAIForFix(prompt: string): Promise<string> {
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${this.config.apiKey}`,
+            },
+            body: JSON.stringify({
+                model: 'gpt-4o',
+                messages: [
+                    {
+                        role: 'system',
+                        content: 'You are an expert code refactoring assistant. Generate secure, reliable fixes in JSON format.',
+                    },
+                    {
+                        role: 'user',
+                        content: prompt,
+                    },
+                ],
+                temperature: 0.3,
+                max_tokens: 3000,
+            }),
+        });
+
+        if (!response.ok) {
+            throw new Error(`OpenAI API error: ${response.status}`);
+        }
+
+        const data = await response.json() as { choices: Array<{ message?: { content?: string } }> };
+        return data.choices[0]?.message?.content || '';
+    }
+
+    /**
+     * Call Anthropic for fix generation
+     */
+    private async callAnthropicForFix(prompt: string): Promise<string> {
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': this.config.apiKey!,
+                'anthropic-version': '2023-06-01',
+            },
+            body: JSON.stringify({
+                model: 'claude-3-5-sonnet-20241022',
+                max_tokens: 3000,
+                messages: [
+                    {
+                        role: 'user',
+                        content: prompt,
+                    },
+                ],
+            }),
+        });
+
+        if (!response.ok) {
+            throw new Error(`Anthropic API error: ${response.status}`);
+        }
+
+        const data = await response.json() as { content: Array<{ text?: string }> };
+        return data.content[0]?.text || '';
+    }
+
+    /**
+     * Call Gemini for fix generation
+     */
+    private async callGeminiForFix(prompt: string): Promise<string> {
+        if (!this.geminiModel) {
+            throw new Error('Gemini model not initialized');
+        }
+
+        const result = await this.geminiModel.generateContent([
+            { text: 'You are an expert code refactoring assistant. Generate secure, reliable fixes in JSON format. Return ONLY valid JSON, no markdown.' },
+            { text: prompt },
+        ]);
+
+        const response = await result.response;
+        return response.text();
+    }
+
+    /**
+     * Call local model for fix generation
+     */
+    private async callLocalForFix(prompt: string): Promise<string> {
+        const response = await fetch('http://localhost:11434/api/generate', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                model: 'codellama',
+                prompt,
+                stream: false,
+            }),
+        });
+
+        if (!response.ok) {
+            throw new Error(`Local API error: ${response.status}`);
+        }
+
+        const data = await response.json() as { response?: string };
+        return data.response || '';
     }
 
     /**

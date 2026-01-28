@@ -325,6 +325,25 @@ const handlers: Record<string, RequestHandler> = {
     },
 
     /**
+     * Generate AI-powered fix for a specific issue
+     * This is the targeted approach - only called when user selects an issue
+     */
+    async generateAiFix(params: unknown): Promise<{ suggestions: CodeSuggestion[] }> {
+        const { issueId, includeRelatedFiles = true } = params as { 
+            issueId: string; 
+            includeRelatedFiles?: boolean 
+        };
+
+        if (!suggestionEngine) {
+            throw new Error('Daemon not initialized');
+        }
+
+        log(`Generating AI fix for issue: ${issueId}`);
+        const suggestions = await suggestionEngine.generateAiFixForIssue(issueId, includeRelatedFiles);
+        return { suggestions };
+    },
+
+    /**
      * Get code health metrics
      */
     async getMetrics(): Promise<{ metrics: CodeHealthMetrics }> {

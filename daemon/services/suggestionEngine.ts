@@ -77,7 +77,7 @@ export class SuggestionEngine {
         // Get file content
         const content = await this.contextMap.getFileContent(issue.location.filePath);
 
-        // Generate suggestions
+        // Generate suggestions (basic, non-AI)
         const suggestions = await this.aiService.generateSuggestion(
             issue,
             content,
@@ -91,6 +91,152 @@ export class SuggestionEngine {
         }
 
         return suggestions;
+    }
+
+    /**
+     * Generate AI-powered fix for a specific issue
+     * This is the targeted approach - only invoked when user explicitly requests it
+     * 
+     * @param issueId The ID of the issue to fix
+     * @param includeRelatedFiles Whether to gather and include related files for context
+     * @returns Array of AI-generated fix suggestions
+     */
+    async generateAiFixForIssue(issueId: string, includeRelatedFiles: boolean = true): Promise<CodeSuggestion[]> {
+        console.log(`[SuggestionEngine] Generating AI fix for issue: ${issueId}`);
+
+        // Get the issue
+        const issue = this.issueCache.get(issueId);
+        if (!issue) {
+            console.log(`[SuggestionEngine] Issue not found: ${issueId}`);
+            return [];
+        }
+
+        // Get file context
+        const fileContext = this.contextMap.getFileContext(issue.location.filePath);
+        if (!fileContext) {
+            console.log(`[SuggestionEngine] File context not found: ${issue.location.filePath}`);
+            return [];
+        }
+
+        // Get file content
+        const content = await this.contextMap.getFileContent(issue.location.filePath);
+
+        // Optionally gather related files for better context
+        const relatedFiles: Array<{ path: string; content: string; context: FileContext }> = [];
+        
+        if (includeRelatedFiles) {
+            const relatedPaths = await this.gatherRelatedFiles(issue.location.filePath, fileContext);
+            console.log(`[SuggestionEngine] Found ${relatedPaths.length} related files`);
+            
+            for (const relatedPath of relatedPaths) {
+                const relatedContext = this.contextMap.getFileContext(relatedPath);
+                if (relatedContext) {
+                    const relatedContent = await this.contextMap.getFileContent(relatedPath);
+                    relatedFiles.push({
+                        path: relatedPath,
+                        content: relatedContent,
+                        context: relatedContext,
+                    });
+                }
+            }
+        }
+
+        // Call AI service to generate fix with full context
+        const suggestions = await this.aiService.generateAiFixForIssue(
+            issue,
+            content,
+            fileContext,
+            relatedFiles
+        );
+
+        // Cache suggestions by issue ID and by suggestion ID
+        this.suggestionCache.set(issueId, suggestions);
+        for (const suggestion of suggestions) {
+            this.suggestionById.set(suggestion.id, suggestion);
+        }
+
+        console.log(`[SuggestionEngine] Generated ${suggestions.length} AI-powered suggestions`);
+        return suggestions;
+    }
+
+    /**
+     * Gather related files that might be relevant for understanding the issue
+     * Includes: imported files, files that import this file, and files in same directory
+     * 
+     * @param filePath The main file path
+     * @param context The file context with imports/exports
+     * @returns Array of related file paths (limited to most relevant)
+     */
+    private async gatherRelatedFiles(filePath: string, context: FileContext): Promise<string[]> {
+        const relatedFiles = new Set<string>();
+        const maxRelatedFiles = 5; // Limit to avoid sending too much context
+
+        // 1. Add directly imported files (most relevant)
+        for (const imp of context.imports) {
+            if (imp.isRelative) {
+                // Try to resolve relative import
+                const resolved = this.resolveImport(filePath, imp.module);
+                if (resolved) {
+                    relatedFiles.add(resolved);
+                }
+            }
+        }
+
+        // 2. Find files that import this file (reverse dependencies)
+        const allFiles = await this.contextMap.getAllFiles();
+        for (const otherPath of allFiles) {
+            if (otherPath === filePath) continue;
+            if (relatedFiles.size >= maxRelatedFiles) break;
+
+            const otherContext = this.contextMap.getFileContext(otherPath);
+            if (otherContext) {
+                // Check if this file imports our target file
+                for (const imp of otherContext.imports) {
+                    if (imp.isRelative) {
+                        const resolved = this.resolveImport(otherPath, imp.module);
+                        if (resolved === filePath) {
+                            relatedFiles.add(otherPath);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        return Array.from(relatedFiles).slice(0, maxRelatedFiles);
+    }
+
+    /**
+     * Resolve a relative import to an absolute path
+     * 
+     * @param fromPath The file doing the importing
+     * @param importPath The relative import path
+     * @returns The resolved absolute path, or null if not found
+     */
+    private resolveImport(fromPath: string, importPath: string): string | null {
+        // Basic resolution - in production you'd use proper module resolution
+        const path = require('path');
+        const dir = path.dirname(fromPath);
+        
+        // Handle various import styles
+        let resolved = path.resolve(dir, importPath);
+        
+        // Try with common extensions
+        const extensions = ['.ts', '.tsx', '.js', '.jsx', '/index.ts', '/index.js'];
+        
+        for (const ext of extensions) {
+            const candidate = resolved + ext;
+            if (this.contextMap.getFileContext(candidate)) {
+                return candidate;
+            }
+        }
+
+        // Try as-is
+        if (this.contextMap.getFileContext(resolved)) {
+            return resolved;
+        }
+
+        return null;
     }
 
     /**

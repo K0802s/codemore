@@ -246,6 +246,10 @@ export interface DaemonMethods {
         params: { filePath: string };
         result: { suggestions: CodeSuggestion[] };
     };
+    'generateAiFix': {
+        params: { issueId: string; includeRelatedFiles?: boolean };
+        result: { suggestions: CodeSuggestion[] };
+    };
     'getMetrics': {
         params: {};
         result: { metrics: CodeHealthMetrics };
@@ -363,6 +367,7 @@ export type WebviewToExtensionMessage =
     | { type: 'requestMetrics' }
     | { type: 'requestIssues'; filter?: IssueFilter }
     | { type: 'requestSuggestions'; issueId: string }
+    | { type: 'generateAiFix'; issueId: string; includeRelatedFiles?: boolean }
     | { type: 'applySuggestion'; suggestionId: string }
     | { type: 'dismissIssue'; issueId: string }
     | { type: 'openFile'; filePath: string; line?: number }
