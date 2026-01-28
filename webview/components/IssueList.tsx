@@ -49,6 +49,7 @@ const IssueList: React.FC<IssueListProps> = ({
     const [showFilters, setShowFilters] = useState(false);
 
     const severities: IssueSeverity[] = ['error', 'warning', 'info', 'hint'];
+    const canonicalSeverities: CanonicalSeverity[] = ['BLOCKER', 'CRITICAL', 'MAJOR', 'MINOR', 'INFO'];
     const categories: IssueCategory[] = [
         'bug', 'code-smell', 'performance', 'security', 'maintainability', 'accessibility', 'best-practice'
     ];
@@ -122,9 +123,20 @@ const IssueList: React.FC<IssueListProps> = ({
             );
         }
 
-        // Filter by severity
+        // Filter by severity (check both standard and canonical)
         if (selectedSeverities.size > 0) {
-            result = result.filter((issue) => selectedSeverities.has(issue.severity));
+            result = result.filter((issue) => {
+                const selectedArray = Array.from(selectedSeverities);
+                // Check standard severity
+                if (selectedArray.includes(issue.severity)) {
+                    return true;
+                }
+                // Check canonical severity
+                if (issue.canonicalSeverity && selectedArray.includes(issue.canonicalSeverity as any)) {
+                    return true;
+                }
+                return false;
+            });
         }
 
         // Filter by category
@@ -251,7 +263,28 @@ const IssueList: React.FC<IssueListProps> = ({
             {showFilters && (
                 <div className="filter-panel">
                     <div className="filter-section">
-                        <span className="filter-label">Severity:</span>
+                        <span className="filter-label">Canonical Severity:</span>
+                        <div className="filter-options">
+                            {canonicalSeverities.map((severity) => (
+                                <button
+                                    key={severity}
+                                    className={`filter-chip canonical ${selectedSeverities.has(severity as any) ? 'active' : ''}`}
+                                    style={{
+                                        borderColor: getSeverityColor('error', severity),
+                                        backgroundColor: selectedSeverities.has(severity as any)
+                                            ? getSeverityColor('error', severity)
+                                            : 'transparent',
+                                    }}
+                                    onClick={() => toggleSeverity(severity as any)}
+                                >
+                                    {severity}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="filter-section">
+                        <span className="filter-label">Standard Severity:</span>
                         <div className="filter-options">
                             {severities.map((severity) => (
                                 <button

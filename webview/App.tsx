@@ -84,12 +84,15 @@ const App: React.FC = () => {
                 });
                 break;
             case 'analysisComplete':
+                // Clear progress immediately
                 setAnalysisProgress(null);
+                setIsLoading(false);
                 // Refresh dashboard to show updated metrics
                 vscode.postMessage({ type: 'refreshDashboard' });
                 break;
             case 'analysisStopped':
                 setAnalysisProgress(null);
+                setIsLoading(false);
                 break;
             case 'error':
                 setError(message.message);

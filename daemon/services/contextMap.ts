@@ -324,12 +324,15 @@ export class ContextMap {
 
         // Calculate overall score (0-100)
         // Higher is better
-        let overallScore = 100;
-        overallScore -= issuesBySeverity.error * 10;
-        overallScore -= issuesBySeverity.warning * 5;
-        overallScore -= issuesBySeverity.info * 2;
-        overallScore -= issuesBySeverity.hint * 1;
-        overallScore = Math.max(0, Math.min(100, overallScore));
+        // If no files analyzed, return 0 so UI can show N/A
+        let overallScore = filesAnalyzed > 0 ? 100 : 0;
+        if (filesAnalyzed > 0) {
+            overallScore -= issuesBySeverity.error * 10;
+            overallScore -= issuesBySeverity.warning * 5;
+            overallScore -= issuesBySeverity.info * 2;
+            overallScore -= issuesBySeverity.hint * 1;
+            overallScore = Math.max(0, Math.min(100, overallScore));
+        }
 
         // Estimate technical debt in minutes
         const technicalDebtMinutes =
