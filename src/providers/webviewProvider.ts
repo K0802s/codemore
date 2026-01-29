@@ -175,6 +175,22 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                 }
                 break;
 
+            case 'generateAiFix':
+                if (!this.isDaemonReady) {
+                    this.postMessage({ type: 'error', message: 'Daemon is not ready' });
+                    return;
+                }
+                try {
+                    const result = await this.rpcClient.call('generateAiFix', {
+                        issueId: message.issueId,
+                        includeRelatedFiles: message.includeRelatedFiles ?? true,
+                    });
+                    this.postMessage({ type: 'suggestionsUpdate', suggestions: result.suggestions });
+                } catch (error) {
+                    this.postMessage({ type: 'error', message: `Failed to generate AI fix: ${error}` });
+                }
+                break;
+
             case 'applySuggestion':
                 if (!this.isDaemonReady) {
                     this.postMessage({ type: 'error', message: 'Daemon is not ready' });

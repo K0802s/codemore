@@ -4,7 +4,7 @@
 
 import React, { useState } from 'react';
 import { CodeIssue, CodeSuggestion } from '../types';
-import { Lightbulb, Search, Eye, Check } from 'lucide-react';
+import { Lightbulb, Search, Eye, Check, Sparkles } from 'lucide-react';
 
 interface DiffPreviewProps {
     issue: CodeIssue | null;
@@ -12,6 +12,8 @@ interface DiffPreviewProps {
     onApply: (suggestion: CodeSuggestion) => void;
     onOpenFile: (filePath: string, line?: number) => void;
     onSelectSuggestion: (suggestion: CodeSuggestion | null) => void;
+    onGenerateAiFix: (issueId: string) => void;
+    isGeneratingAiFix: boolean;
 }
 
 const DiffPreview: React.FC<DiffPreviewProps> = ({
@@ -19,6 +21,8 @@ const DiffPreview: React.FC<DiffPreviewProps> = ({
     suggestions,
     onApply,
     onOpenFile,
+    onGenerateAiFix,
+    isGeneratingAiFix,
 }) => {
     const [viewMode, setViewMode] = useState<'split' | 'unified'>('split');
     const [isApplying, setIsApplying] = useState(false);
@@ -38,9 +42,17 @@ const DiffPreview: React.FC<DiffPreviewProps> = ({
     if (!selectedSuggestion) {
         return (
             <div className="diff-preview empty-state">
-                <div className="empty-icon"><Search size={48} /></div>
-                <h3>No Suggestions Available</h3>
-                <p>No automated fixes are available for this issue.</p>
+                <div className="empty-icon">{isGeneratingAiFix ? <Sparkles size={48} /> : <Search size={48} />}</div>
+                <h3>{isGeneratingAiFix ? 'Generating AI Fix...' : 'No Suggestions Available'}</h3>
+                <p>{isGeneratingAiFix ? 'AI is analyzing your code and generating a fix...' : 'Click the button below to generate an AI-powered fix for this issue.'}</p>
+                {!isGeneratingAiFix && issue && (
+                    <button 
+                        className="action-button primary generate-fix-button"
+                        onClick={() => onGenerateAiFix(issue.id)}
+                    >
+                        <Sparkles size={16} /> Generate AI Fix
+                    </button>
+                )}
             </div>
         );
     }
@@ -90,6 +102,19 @@ const DiffPreview: React.FC<DiffPreviewProps> = ({
                 <button className="action-button secondary" onClick={() => onOpenFile(selectedSuggestion.location.filePath, selectedSuggestion.location.range.start.line + 1)}>
                     <Eye size={14} /> Preview
                 </button>
+                {issue && (
+                    <button 
+                        className="action-button secondary" 
+                        onClick={() => onGenerateAiFix(issue.id)}
+                        disabled={isGeneratingAiFix}
+                    >
+                        {isGeneratingAiFix ? (
+                            <>Regenerating...</>
+                        ) : (
+                            <><Sparkles size={14} /> Regenerate AI Fix</>
+                        )}
+                    </button>
+                )}
                 <button className="action-button primary" onClick={handleApply} disabled={isApplying}>
                     {isApplying ? (
                         <>Applying...</>

@@ -4,120 +4,113 @@
 
 ## Features
 
-- 🔍 **Real-time Code Analysis** - Automatic detection of bugs, code smells, performance issues, and security vulnerabilities
-- 🤖 **AI-Powered Suggestions** - Intelligent refactoring suggestions with contextual awareness
-- 📊 **Code Quality Dashboard** - Visual health metrics and issue tracking
-- ⚡ **Zero-Friction Experience** - One-click installation with automatic background analysis
-- 🔄 **Incremental Updates** - Only analyzes changed files for fast performance
+- 🔍 **Real-time Code Analysis** - Automatic detection of bugs, code smells, performance issues, and security vulnerabilities.
+- 🤖 **Targeted AI Suggestions** - On-demand, context-aware fixes for specific issues.
+- ⚡ **Local-First Architecture** - Most analysis happens locally on your machine for maximum speed and privacy.
+- 📊 **Code Quality Dashboard** - Visual health metrics and issue tracking.
+- 🛠️ **Zero-Friction Setup** - Comes with industry-standard tools pre-bundled (Biome, Ruff, Semgrep).
 
-## Architecture
+---
 
-```
-┌─────────────────┐     ┌─────────────────────┐
-│  Extension Host │◄───►│  Context Daemon     │
-│  (TypeScript)   │ IPC │  (Node.js)          │
-└────────┬────────┘     └──────────┬──────────┘
-         │                         │
-         │                         ├── AST Parser
-         ▼                         ├── Context Map
-┌─────────────────┐               ├── AI Service
-│  Webview UI     │               └── Analysis Queue
-│  (React)        │
-└─────────────────┘
-```
+## How It Works
+
+CodeMore uses a **multi-layered analysis pipeline** to provide immediate feedback while keeping your code secure.
+
+### Layer 1: Fast Local Analysis (No Data Sent Out)
+When you open a file or save changes, CodeMore runs high-performance local tools:
+1.  **External Tools**: We bundle optimized binaries for industry-standard tools:
+    *   **Biome**: Ultra-fast linter/formatter for JavaScript/TypeScript.
+    *   **Ruff**: Lightning-fast Python linter.
+    *   **Semgrep**: Static analysis for security vulnerabilities (SAST) supporting 30+ languages.
+    *   **TFLint/Checkov**: Infrastructure-as-Code analysis.
+2.  **Built-in Static Analysis**: Our custom engine analyzes TypeScript ASTs for complexity and structural issues.
+
+**✅ Privacy Note:** layers 1 & 2 run entirely on your local machine. No code leaves your computer.
+
+### Layer 2: Targeted AI Analysis (On-Demand)
+AI is used **only when you request it**. We believe in keeping costs low and privacy high.
+
+*   **Trigger**: You select a specific issue in the dashboard and click **"Generate AI Fix"**.
+*   **What happens**: 
+    1.  CodeMore gathers code context around the issue.
+    2.  It identifies related files (imports, dependencies) to give the AI proper context.
+    3.  This **focused context** is sent to the configured AI provider (e.g., Gemini).
+    4.  The AI returns tailored fix suggestions.
+
+**✅ Privacy Note:** Your code is only sent to the AI provider when you explicitly request a fix for a specific issue.
+
+---
+
+## Privacy & Data Usage
+
+We take your code privacy seriously. Here is exactly how data is handled:
+
+| Data Type | Handling | Location |
+| :--- | :--- | :--- |
+| **Source Code** | Analyzed locally by default. Sent to AI provider **only** during "Generate AI Fix". | Local Machine (unless AI invoked) |
+| **Analysis Results** | Stored in memory / local workspace storage. | Local Machine |
+| **AI Prompts** | Sent to your configured provider (e.g., Google Gemini) via HTTPS. | External (AI Provider) |
+| **API Keys** | Stored securely in VS Code's Secret Storage. | Local Machine |
+
+**We do not collect or store your source code on our servers.**
+
+---
 
 ## Getting Started
 
 ### Installation
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/codemore/codemore-vscode.git
-   cd codemore-vscode
-   ```
+1.  **Install the Extension**: Install CodeMore from the VS Code Marketplace.
+2.  **Zero Setup**: The extension comes with all necessary analysis tools pre-packaged. It works out of the box for JS/TS, Python, and more.
+3.  **Configure AI (Optional)**: To enable AI fix generation:
+    *   Open VS Code Settings.
+    *   Search for `codemore.aiProvider` and select your provider (e.g., `gemini`).
+    *   Enter your API Key in `codemore.apiKey`.
 
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
+### Building from Source
 
-3. Build the extension:
-   ```bash
-   npm run compile
-   ```
+If you are a developer contributing to CodeMore:
 
-4. Press F5 in VS Code to launch the Extension Development Host
+1.  Clone the repository:
+    ```bash
+    git clone https://github.com/codemore/codemore-vscode.git
+    cd codemore-vscode
+    ```
+2.  Install dependencies:
+    ```bash
+    npm install
+    ```
+3.  **Binaries**: 
+    *   For local dev, the extension will use system-installed tools (like `ruff` or `biome`) if available.
+    *   To simulate the user experience, download the bundled binaries:
+        ```bash
+        npm run download-binaries
+        ```
+4.  Build and Run:
+    ```bash
+    npm run compile
+    # Press F5 to launch the Extension Host
+    ```
 
-### Configuration
+---
 
-Configure CodeMore via VS Code settings:
+## Architecture
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `codemore.aiProvider` | `openai` | AI provider (openai, anthropic, local) |
-| `codemore.apiKey` | `""` | API key for AI provider |
-| `codemore.autoAnalyze` | `true` | Auto-analyze on file save |
-| `codemore.analysisDelay` | `2000` | Debounce delay in ms |
-| `codemore.excludePatterns` | `[...]` | Glob patterns to exclude |
-| `codemore.maxFileSizeKB` | `500` | Max file size to analyze |
-
-Install CMD - code --install-extension c:\Code\codemore\codemore-1.0.0.vsix
-
-## Commands
-
-| Command | Keybinding | Description |
-|---------|------------|-------------|
-| `CodeMore: Open Dashboard` | `Ctrl+Shift+Q` | Open the Code Quality Dashboard |
-| `CodeMore: Analyze Workspace` | - | Analyze all files in workspace |
-| `CodeMore: Analyze Current File` | `Ctrl+Shift+A` | Analyze the active file |
-| `CodeMore: Restart Daemon` | - | Restart the background daemon |
-| `CodeMore: Show Logs` | - | Open the output channel |
-
-## Development
-
-### Project Structure
+CodeMore uses a daemon architecture to keep the VS Code UI fast and responsive.
 
 ```
-codemore/
-├── src/                    # Extension Host
-│   ├── extension.ts        # Entry point
-│   ├── daemon/             # Daemon manager
-│   ├── rpc/                # JSON-RPC client
-│   └── providers/          # Webview provider
-├── daemon/                 # Background Daemon
-│   ├── index.ts            # Daemon entry
-│   └── services/           # Analysis services
-├── shared/                 # Shared types
-│   └── protocol.ts         # JSON-RPC protocol
-├── webview/                # React UI
-│   ├── App.tsx             # Main app
-│   └── components/         # UI components
-└── test/                   # Tests
+┌─────────────────┐       IPC        ┌──────────────────────┐
+│  VS Code Ext    │◄────────────────►│    Context Daemon    │
+│  (UI Thread)    │                  │      (Node.js)       │
+└────────┬────────┘                  └──────────┬───────────┘
+         │                                      │
+         │                         ┌────────────┼─────────────┐
+         ▼                         │            │             │
+┌─────────────────┐          ┌─────▼──────┐ ┌───▼────┐  ┌─────▼─────┐
+│   Webview UI    │          │ Ext. Tools │ │ AI Svc │  │ Analysis  │
+│     (React)     │          │ (Binaries) │ │ (HTTP) │  │  Queue    │
+└─────────────────┘          └────────────┘ └────────┘  └───────────┘
 ```
 
-### Building
-
-```bash
-# Full build
-npm run compile
-
-# Watch mode
-npm run watch
-
-# Package VSIX
-npm run vsce:package
-```
-
-### Testing
-
-```bash
-# Run tests
-npm test
-
-# Run unit tests only
-npm run test:unit
-```
-
-## License
-
-MIT License - see LICENSE file for details.
+*   **Extension Host**: Handles UI, commands, and file events.
+*   **Context Daemon**: A separate Node.js process that runs analysis tools and manages the AI service. This prevents heavy analysis from freezing your editor.

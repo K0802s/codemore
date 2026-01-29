@@ -52,56 +52,20 @@ export class SuggestionEngine {
 
     /**
      * Get suggestions for a specific issue
+     * Returns only cached suggestions - no generation happens here
+     * Use generateAiFixForIssue() to explicitly request AI-powered fixes
      */
     async getSuggestionsForIssue(issueId: string): Promise<CodeSuggestion[]> {
-        // Check cache
+        // Check cache only - no generation
         const cached = this.suggestionCache.get(issueId);
         if (cached) {
+            console.log(`[SuggestionEngine] Returning ${cached.length} cached suggestions for: ${issueId}`);
             return cached;
         }
 
-        // Get the issue
-        const issue = this.issueCache.get(issueId);
-        if (!issue) {
-            console.log(`[SuggestionEngine] Issue not found: ${issueId}`);
-            return [];
-        }
-
-        // Get file context
-        const fileContext = this.contextMap.getFileContext(issue.location.filePath);
-        if (!fileContext) {
-            console.log(`[SuggestionEngine] File context not found: ${issue.location.filePath}`);
-            return [];
-        }
-
-        // Get file content
-        const content = await this.contextMap.getFileContent(issue.location.filePath);
-
-        // If AI is available, use AI-powered fix generation automatically
-        // This provides better suggestions when user requests them
-        let suggestions: CodeSuggestion[];
-        
-        if (this.aiService.isAiAvailable()) {
-            console.log(`[SuggestionEngine] AI available, generating AI-powered fix for: ${issueId}`);
-            // Use the full AI-powered approach with context gathering
-            suggestions = await this.generateAiFixForIssue(issueId, true);
-        } else {
-            console.log(`[SuggestionEngine] No AI available, generating basic suggestion for: ${issueId}`);
-            // Fallback to basic suggestions
-            suggestions = await this.aiService.generateSuggestion(
-                issue,
-                content,
-                fileContext
-            );
-
-            // Cache suggestions by issue ID and by suggestion ID
-            this.suggestionCache.set(issueId, suggestions);
-            for (const suggestion of suggestions) {
-                this.suggestionById.set(suggestion.id, suggestion);
-            }
-        }
-
-        return suggestions;
+        // No suggestions available - user must click "Generate Fix" button
+        console.log(`[SuggestionEngine] No cached suggestions for: ${issueId}. User must generate fix explicitly.`);
+        return [];
     }
 
     /**

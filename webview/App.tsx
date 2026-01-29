@@ -50,6 +50,7 @@ const App: React.FC = () => {
     const [selectedIssue, setSelectedIssue] = useState<CodeIssue | null>(null);
     const [selectedSuggestion, setSelectedSuggestion] = useState<CodeSuggestion | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [isGeneratingAiFix, setIsGeneratingAiFix] = useState(false);
     const [analysisProgress, setAnalysisProgress] = useState<{ progress: number; total: number; currentFile?: string } | null>(null);
     const [fileDiscovery, setFileDiscovery] = useState<{ totalFiles: number; fileTypes: Record<string, number> } | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -69,6 +70,7 @@ const App: React.FC = () => {
                 break;
             case 'suggestionsUpdate':
                 setSuggestions(message.suggestions);
+                setIsGeneratingAiFix(false);
                 break;
             case 'fileDiscovery':
                 setFileDiscovery({
@@ -96,6 +98,7 @@ const App: React.FC = () => {
                 break;
             case 'error':
                 setError(message.message);
+                setIsGeneratingAiFix(false);
                 setTimeout(() => setError(null), 5000);
                 break;
             case 'suggestionApplied':
@@ -125,8 +128,15 @@ const App: React.FC = () => {
     // Handle issue selection
     const handleSelectIssue = (issue: CodeIssue) => {
         setSelectedIssue(issue);
-        vscode.postMessage({ type: 'requestSuggestions', issueId: issue.id });
+        // Clear any previous suggestions and show empty state with Generate Fix button
+        setSuggestions([]);
         setActiveTab('suggestions');
+    };
+
+    // Handle generate AI fix
+    const handleGenerateAiFix = (issueId: string) => {
+        setIsGeneratingAiFix(true);
+        vscode.postMessage({ type: 'generateAiFix', issueId, includeRelatedFiles: true });
     };
 
     // Handle suggestion apply
@@ -329,6 +339,8 @@ const App: React.FC = () => {
                                 onApply={handleApplySuggestion}
                                 onOpenFile={handleOpenFile}
                                 onSelectSuggestion={setSelectedSuggestion}
+                                onGenerateAiFix={handleGenerateAiFix}
+                                isGeneratingAiFix={isGeneratingAiFix}
                             />
                         )}
                     </>

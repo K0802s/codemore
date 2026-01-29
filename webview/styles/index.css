@@ -1048,6 +1048,19 @@ body {
   background: var(--vscode-button-secondaryHoverBackground);
 }
 
+.action-button.secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Generate AI Fix button - special styling in empty state */
+.generate-fix-button {
+  margin-top: 16px;
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
 .spinner-small {
   width: 14px;
   height: 14px;
