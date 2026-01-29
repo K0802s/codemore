@@ -302,7 +302,7 @@ const IssueList: React.FC<IssueListProps> = ({
                 ) : (
                     filteredIssues.map((issue) => (
                         <div
-                            key={issue.id}
+                            key={`${issue.id}-${issue.location.filePath}-${issue.location.range.start.line}`}
                             className={`issue-card ${selectedIssue?.id === issue.id ? 'selected' : ''}`}
                             onClick={() => onSelectIssue(issue)}
                         >
