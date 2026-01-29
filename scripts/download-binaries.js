@@ -137,10 +137,16 @@ async function extractArchive(archivePath, destDir, binaryName) {
     console.log(`  Extracting: ${archivePath}`);
     
     if (ext === '.zip') {
-        // Use unzip command
-        await execAsync(`unzip -o "${archivePath}" -d "${destDir}"`);
+        // Use platform-specific unzip command
+        if (process.platform === 'win32') {
+            // Use PowerShell's Expand-Archive on Windows
+            await execAsync(`powershell -Command "Expand-Archive -Path '${archivePath}' -DestinationPath '${destDir}' -Force"`);
+        } else {
+            // Use unzip command on Unix-like systems
+            await execAsync(`unzip -o "${archivePath}" -d "${destDir}"`);
+        }
     } else if (archivePath.endsWith('.tar.gz')) {
-        // Use tar command
+        // Use tar command (available on Windows 10+ and Unix-like systems)
         await execAsync(`tar -xzf "${archivePath}" -C "${destDir}"`);
     }
     
@@ -321,13 +327,26 @@ async function main() {
         return;
     }
     
-    // Check for required commands
+    // Check for required commands (platform-specific)
     try {
-        await execAsync('which unzip');
-        await execAsync('which tar');
+        if (process.platform === 'win32') {
+            // On Windows, check for tar (built-in on Windows 10+) and PowerShell
+            await execAsync('where tar');
+            await execAsync('where powershell');
+        } else {
+            // On Unix-like systems, check for unzip and tar
+            await execAsync('which unzip');
+            await execAsync('which tar');
+        }
     } catch (error) {
-        console.error('❌ Error: unzip and tar commands are required');
-        console.error('Install them with: brew install unzip (on macOS)');
+        if (process.platform === 'win32') {
+            console.error('❌ Error: tar or PowerShell commands are required');
+            console.error('These should be available on Windows 10+ by default.');
+            console.error('If missing, please update Windows or install Git Bash.');
+        } else {
+            console.error('❌ Error: unzip and tar commands are required');
+            console.error('Install them with: brew install unzip (on macOS)');
+        }
         process.exit(1);
     }
     
